@@ -1,37 +1,39 @@
 /**
  * conversationStore.js
  * ------------------------------------------------------------------
- * TEMPORARY in-memory store of recent chat history per customer, so the
- * AI has context across a back-and-forth conversation instead of only
- * ever seeing one message in isolation.
+ * PostgreSQL-backed conversation history per customer, so the AI has
+ * context across a back-and-forth conversation instead of only ever
+ * seeing one message in isolation.
  *
- * Keyed by `${businessId}:${customerWaId}` so the same customer texting
- * two different client businesses gets two separate conversations.
- *
- * Swap for a real database before production - this resets on restart
- * and will grow unbounded in memory over a long-running process.
+ * Same function names as the old in-memory version; now async since
+ * they hit the database.
  * ------------------------------------------------------------------
  */
 
-const MAX_TURNS = 12; // keep the last N messages (both sides combined)
+const { pool } = require("../db");
 
-const conversations = new Map(); // key -> [{ role: "user"|"model", text }]
+const MAX_TURNS = 12; // keep the last N messages (both sides combined) for context
 
-function conversationKey(businessId, customerWaId) {
-  return `${businessId}:${customerWaId}`;
+async function getHistory(businessId, customerWaId) {
+  const result = await pool.query(
+    `SELECT role, message_text
+     FROM conversation_turns
+     WHERE business_id = $1 AND customer_wa_id = $2
+     ORDER BY created_at DESC
+     LIMIT $3`,
+    [businessId, customerWaId, MAX_TURNS]
+  );
+
+  // reverse back to oldest-first, since we queried newest-first to LIMIT correctly
+  return result.rows.reverse().map((row) => ({ role: row.role, text: row.message_text }));
 }
 
-function getHistory(businessId, customerWaId) {
-  return conversations.get(conversationKey(businessId, customerWaId)) || [];
-}
-
-function appendTurn(businessId, customerWaId, role, text) {
-  const key = conversationKey(businessId, customerWaId);
-  const history = conversations.get(key) || [];
-  history.push({ role, text });
-  // trim to the last MAX_TURNS entries so memory/prompt size stays bounded
-  while (history.length > MAX_TURNS) history.shift();
-  conversations.set(key, history);
+async function appendTurn(businessId, customerWaId, role, text) {
+  await pool.query(
+    `INSERT INTO conversation_turns (business_id, customer_wa_id, role, message_text)
+     VALUES ($1, $2, $3, $4)`,
+    [businessId, customerWaId, role, text]
+  );
 }
 
 module.exports = { getHistory, appendTurn };

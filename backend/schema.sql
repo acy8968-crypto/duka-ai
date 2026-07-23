@@ -1,0 +1,59 @@
+-- ============================================================
+-- Duka AI — Database Schema
+-- Run this once against a fresh PostgreSQL database to set up
+-- all the tables the backend needs.
+--
+-- Usage:
+--   psql -U your_user -d your_database -f schema.sql
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS businesses (
+  id                        TEXT PRIMARY KEY,
+  business_name             TEXT NOT NULL,
+  business_type             TEXT,
+  owner_contact             TEXT,
+  description               TEXT,
+  system_prompt             TEXT,
+  whatsapp_phone_number_id  TEXT UNIQUE,
+  whatsapp_waba_id          TEXT,
+  whatsapp_access_token     TEXT, -- NOTE: encrypt this column in production (e.g. pgcrypto)
+  whatsapp_connected        BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Fast lookup for the webhook, which routes incoming messages by
+-- phone_number_id (already unique-indexed via the UNIQUE constraint above,
+-- but an explicit index name makes the intent clear).
+CREATE INDEX IF NOT EXISTS idx_businesses_phone_number_id
+  ON businesses (whatsapp_phone_number_id);
+
+CREATE TABLE IF NOT EXISTS conversation_turns (
+  id            BIGSERIAL PRIMARY KEY,
+  business_id   TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_wa_id TEXT NOT NULL,
+  role          TEXT NOT NULL CHECK (role IN ('user', 'model')),
+  message_text  TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_turns_lookup
+  ON conversation_turns (business_id, customer_wa_id, created_at);
+
+CREATE TABLE IF NOT EXISTS orders (
+  id              TEXT PRIMARY KEY,
+  business_id     TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  customer_wa_id  TEXT,
+  raw_text        TEXT NOT NULL, -- the text after "ORDER_CONFIRMED:" in the AI's reply
+  received_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_orders_business_id
+  ON orders (business_id, received_at);
+
+-- Dedup table for webhook message IDs, so retried/duplicate deliveries
+-- from Meta don't get processed twice. TTL cleanup is handled by the
+-- application (see db.js), not by Postgres itself.
+CREATE TABLE IF NOT EXISTS processed_message_ids (
+  message_id  TEXT PRIMARY KEY,
+  processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);

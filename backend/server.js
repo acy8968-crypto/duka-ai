@@ -9,6 +9,7 @@ const { sendTextMessage } = require("./services/whatsappService");
 const { getHistory, appendTurn } = require("./services/conversationStore");
 const { addOrder, getOrders } = require("./services/orderStore");
 const { buildOrdersWorkbook } = require("./services/exportService");
+const { markProcessedIfNew, cleanupOlderThan } = require("./services/dedupStore");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -42,7 +43,7 @@ app.post("/api/generate-prompt", async (req, res) => {
   try {
     const systemPrompt = await generateSystemPrompt({ businessName, businessType, description });
 
-    const business = createBusiness({
+    const business = await createBusiness({
       businessName,
       businessType,
       ownerContact,
@@ -67,8 +68,8 @@ app.post("/api/generate-prompt", async (req, res) => {
    GET /api/business/:id
    -> fetch a stored business record (used for debugging / step 3 summary)
    ------------------------------------------------------------------ */
-app.get("/api/business/:id", (req, res) => {
-  const business = getBusiness(req.params.id);
+app.get("/api/business/:id", async (req, res) => {
+  const business = await getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
   res.json(business);
 });
@@ -95,7 +96,7 @@ app.post("/api/business/:id/connect-whatsapp", async (req, res) => {
     return res.status(400).json({ error: "code, wabaId, and phoneNumberId are all required." });
   }
 
-  const business = getBusiness(req.params.id);
+  const business = await getBusiness(req.params.id);
   if (!business) {
     return res.status(404).json({ error: "Business not found." });
   }
@@ -105,7 +106,7 @@ app.post("/api/business/:id/connect-whatsapp", async (req, res) => {
     await registerPhoneNumber({ phoneNumberId, accessToken });
     await subscribeAppToWaba({ wabaId, accessToken });
 
-    const updated = attachWhatsappNumber(req.params.id, { phoneNumberId, wabaId, accessToken });
+    const updated = await attachWhatsappNumber(req.params.id, { phoneNumberId, wabaId, accessToken });
 
     res.json({
       businessId: updated.id,
@@ -131,9 +132,12 @@ app.post("/api/business/:id/connect-whatsapp", async (req, res) => {
    your callback URL in the Meta App Dashboard.
    ==================================================================== */
 
-// Simple in-memory dedup so retried/duplicate webhook deliveries
-// (WhatsApp sends "at-least-once") don't get processed twice.
-const processedMessageIds = new Set();
+// Duplicate webhook deliveries (WhatsApp sends "at-least-once") are caught
+// via markProcessedIfNew() in dedupStore.js, backed by Postgres so it
+// survives restarts. Old dedup records are cleaned up periodically below.
+setInterval(() => {
+  cleanupOlderThan(24).catch((err) => console.error("Dedup cleanup failed:", err.message));
+}, 60 * 60 * 1000); // every hour
 
 /* --------------------------------------------------------------------
    GET /webhook
@@ -181,7 +185,7 @@ async function handleIncomingWebhook(payload) {
       if (!value || !Array.isArray(value.messages)) continue; // e.g. status updates, skip
 
       const phoneNumberId = value.metadata?.phone_number_id;
-      const business = findByPhoneNumberId(phoneNumberId);
+      const business = await findByPhoneNumberId(phoneNumberId);
 
       if (!business) {
         console.warn(`No business found for phone_number_id ${phoneNumberId} - ignoring message.`);
@@ -189,8 +193,8 @@ async function handleIncomingWebhook(payload) {
       }
 
       for (const message of value.messages) {
-        if (processedMessageIds.has(message.id)) continue; // duplicate delivery, skip
-        processedMessageIds.add(message.id);
+        const isNew = await markProcessedIfNew(message.id);
+        if (!isNew) continue; // duplicate delivery, skip
 
         if (message.type !== "text") continue; // MVP: handle text only for now
 
@@ -206,7 +210,7 @@ async function handleIncomingWebhook(payload) {
 
 async function handleCustomerMessage({ business, customerWaId, messageText }) {
   try {
-    const history = getHistory(business.id, customerWaId);
+    const history = await getHistory(business.id, customerWaId);
 
     const replyText = await generateReply({
       systemPrompt: business.systemPrompt,
@@ -215,14 +219,14 @@ async function handleCustomerMessage({ business, customerWaId, messageText }) {
     });
 
     // Update conversation history with both sides of this exchange
-    appendTurn(business.id, customerWaId, "user", messageText);
-    appendTurn(business.id, customerWaId, "model", replyText);
+    await appendTurn(business.id, customerWaId, "user", messageText);
+    await appendTurn(business.id, customerWaId, "model", replyText);
 
     // Detect a finalized order in the AI's reply (matches the
     // "ORDER_CONFIRMED:" instruction baked into the generated system prompt)
     const orderMatch = replyText.match(/ORDER_CONFIRMED:\s*(.+)/i);
     if (orderMatch) {
-      addOrder(business.id, { raw: orderMatch[1].trim(), customerWaId });
+      await addOrder(business.id, { raw: orderMatch[1].trim(), customerWaId });
       console.log(`Order detected for business ${business.id}: ${orderMatch[1].trim()}`);
     }
 
@@ -243,10 +247,10 @@ async function handleCustomerMessage({ business, customerWaId, messageText }) {
    GET /api/business/:id/orders
    Preview of orders detected so far for this business, as raw JSON.
    ------------------------------------------------------------------ */
-app.get("/api/business/:id/orders", (req, res) => {
-  const business = getBusiness(req.params.id);
+app.get("/api/business/:id/orders", async (req, res) => {
+  const business = await getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
-  res.json({ businessId: business.id, orders: getOrders(business.id) });
+  res.json({ businessId: business.id, orders: await getOrders(business.id) });
 });
 
 /* ------------------------------------------------------------------
@@ -254,11 +258,11 @@ app.get("/api/business/:id/orders", (req, res) => {
    Downloads all detected orders for this business as a real .xlsx file,
    ready to open in Excel, Google Sheets, or any spreadsheet app.
    ------------------------------------------------------------------ */
-app.get("/api/business/:id/orders/export", (req, res) => {
-  const business = getBusiness(req.params.id);
+app.get("/api/business/:id/orders/export", async (req, res) => {
+  const business = await getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
 
-  const orders = getOrders(business.id);
+  const orders = await getOrders(business.id);
   const workbookBuffer = buildOrdersWorkbook(orders);
 
   const safeName = business.businessName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
