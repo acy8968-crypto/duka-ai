@@ -82,4 +82,53 @@ async function generateSystemPrompt({ businessName, businessType, description })
   return generatedText.trim();
 }
 
-module.exports = { generateSystemPrompt, buildMetaPrompt };
+module.exports = { generateSystemPrompt, buildMetaPrompt, generateReply };
+
+/**
+ * Generates the AI's reply to a single incoming customer message, using
+ * the business's stored system prompt plus recent conversation history
+ * for context.
+ *
+ * @param {string} systemPrompt - this business's generated WhatsApp AI system prompt
+ * @param {Array<{role: "user"|"model", text: string}>} history - prior turns, oldest first
+ * @param {string} customerMessage - the new incoming message text
+ * @returns {Promise<string>} the AI's reply text
+ */
+async function generateReply({ systemPrompt, history = [], customerMessage }) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY is not set. Add it to your .env file.");
+  }
+
+  const contents = [
+    ...history.map((turn) => ({ role: turn.role, parts: [{ text: turn.text }] })),
+    { role: "user", parts: [{ text: customerMessage }] },
+  ];
+
+  const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 400,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Gemini API error (${response.status}): ${errorBody}`);
+  }
+
+  const data = await response.json();
+  const replyText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!replyText) {
+    throw new Error("Gemini returned no usable reply. Full response: " + JSON.stringify(data));
+  }
+
+  return replyText.trim();
+}
