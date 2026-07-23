@@ -8,6 +8,7 @@ const { exchangeCodeForToken, registerPhoneNumber, subscribeAppToWaba } = requir
 const { sendTextMessage } = require("./services/whatsappService");
 const { getHistory, appendTurn } = require("./services/conversationStore");
 const { addOrder, getOrders } = require("./services/orderStore");
+const { buildOrdersWorkbook } = require("./services/exportService");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -240,14 +241,35 @@ async function handleCustomerMessage({ business, customerWaId, messageText }) {
 
 /* ------------------------------------------------------------------
    GET /api/business/:id/orders
-   Preview of orders detected so far for this business. The next
-   build step (Excel/Sheets export) will turn this into a downloadable
-   spreadsheet instead of raw JSON.
+   Preview of orders detected so far for this business, as raw JSON.
    ------------------------------------------------------------------ */
 app.get("/api/business/:id/orders", (req, res) => {
   const business = getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
   res.json({ businessId: business.id, orders: getOrders(business.id) });
+});
+
+/* ------------------------------------------------------------------
+   GET /api/business/:id/orders/export
+   Downloads all detected orders for this business as a real .xlsx file,
+   ready to open in Excel, Google Sheets, or any spreadsheet app.
+   ------------------------------------------------------------------ */
+app.get("/api/business/:id/orders/export", (req, res) => {
+  const business = getBusiness(req.params.id);
+  if (!business) return res.status(404).json({ error: "Business not found." });
+
+  const orders = getOrders(business.id);
+  const workbookBuffer = buildOrdersWorkbook(orders);
+
+  const safeName = business.businessName.replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+  const filename = `${safeName}-orders.xlsx`;
+
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.send(workbookBuffer);
 });
 
 app.listen(PORT, () => {
