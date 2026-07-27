@@ -57,3 +57,22 @@ CREATE TABLE IF NOT EXISTS processed_message_ids (
   message_id  TEXT PRIMARY KEY,
   processed_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- M-Pesa STK Push payment attempts and their eventual result, used for
+-- subscription billing.
+CREATE TABLE IF NOT EXISTS payments (
+  checkout_request_id  TEXT PRIMARY KEY, -- Daraja's ID for this specific STK Push attempt
+  business_id          TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  phone_number         TEXT NOT NULL,
+  amount               NUMERIC NOT NULL,
+  account_reference    TEXT,
+  status               TEXT NOT NULL DEFAULT 'pending', -- pending | completed | failed
+  result_code          INTEGER,
+  result_desc          TEXT,
+  mpesa_receipt_number TEXT,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at         TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_payments_business_id
+  ON payments (business_id, created_at);
