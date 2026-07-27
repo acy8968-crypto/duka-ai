@@ -318,6 +318,99 @@ function initOnboardingForm() {
     goToStage(3);
   });
 
+  /* ---------- M-Pesa subscription payment (sandbox) ---------- */
+
+  const payNowBtn = document.getElementById("payNowBtn");
+  const payPhoneInput = document.getElementById("payPhone");
+  const payAmountInput = document.getElementById("payAmount");
+  const paymentBox = document.getElementById("paymentBox");
+  const paymentStatus = document.getElementById("paymentStatus");
+  const paymentStatusText = document.getElementById("paymentStatusText");
+
+  let pollTimer = null;
+
+  payNowBtn.addEventListener("click", async () => {
+    const phoneNumber = payPhoneInput.value.trim();
+    const amount = Number(payAmountInput.value.trim());
+
+    if (!/^254\d{9}$/.test(phoneNumber)) {
+      paymentStatus.classList.add("visible");
+      paymentStatusText.textContent = "Enter a valid number in the format 2547XXXXXXXX.";
+      return;
+    }
+    if (!amount || amount <= 0) {
+      paymentStatus.classList.add("visible");
+      paymentStatusText.textContent = "Enter a valid amount.";
+      return;
+    }
+
+    payNowBtn.disabled = true;
+    payNowBtn.textContent = "Sending prompt to your phone…";
+    paymentStatus.classList.add("visible");
+    paymentStatusText.textContent = "Check your phone for the M-Pesa PIN prompt…";
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/business/${state.businessId}/subscribe/initiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phoneNumber, amount }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start payment.");
+
+      // Poll the payments endpoint every 3s until this attempt resolves
+      pollTimer = setInterval(() => pollPaymentStatus(data.checkoutRequestId), 3000);
+
+      // Stop polling automatically after 2 minutes even if nothing resolves,
+      // so this doesn't run forever if the customer never completes the prompt.
+      setTimeout(() => {
+        if (pollTimer) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          if (paymentStatusText.textContent.includes("Check your phone")) {
+            paymentStatusText.textContent = "No response yet — you can try again if needed.";
+            payNowBtn.disabled = false;
+            payNowBtn.textContent = "Pay with M-Pesa";
+          }
+        }
+      }, 120000);
+    } catch (err) {
+      console.error("STK Push failed:", err);
+      paymentStatusText.textContent = "Couldn't start payment. Make sure the backend is running and try again.";
+      payNowBtn.disabled = false;
+      payNowBtn.textContent = "Pay with M-Pesa";
+    }
+  });
+
+  async function pollPaymentStatus(checkoutRequestId) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/business/${state.businessId}/payments`);
+      const data = await res.json();
+      const match = (data.payments || []).find((p) => p.checkout_request_id === checkoutRequestId);
+
+      if (!match || match.status === "pending") return; // keep waiting
+
+      clearInterval(pollTimer);
+      pollTimer = null;
+
+      if (match.status === "completed") {
+        paymentBox.style.borderStyle = "solid";
+        paymentBox.style.borderColor = "var(--teal)";
+        paymentStatusText.textContent = `Payment received! Receipt: ${match.mpesa_receipt_number || "N/A"}`;
+        payNowBtn.textContent = "Paid";
+      } else {
+        paymentStatusText.textContent = `Payment failed: ${match.result_desc || "Please try again."}`;
+        payNowBtn.disabled = false;
+        payNowBtn.textContent = "Pay with M-Pesa";
+      }
+    } catch (err) {
+      console.error("Payment status check failed:", err);
+      // stay silent and let the next poll tick retry, rather than
+      // interrupting the user with a transient network error
+    }
+  }
+
   function escapeHtml(str) {
     const div = document.createElement("div");
     div.textContent = str;

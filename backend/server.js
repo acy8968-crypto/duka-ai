@@ -10,6 +10,8 @@ const { getHistory, appendTurn } = require("./services/conversationStore");
 const { addOrder, getOrders } = require("./services/orderStore");
 const { buildOrdersWorkbook } = require("./services/exportService");
 const { markProcessedIfNew, cleanupOlderThan } = require("./services/dedupStore");
+const { initiateStkPush } = require("./services/mpesaService");
+const { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness } = require("./services/paymentStore");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -274,6 +276,105 @@ app.get("/api/business/:id/orders/export", async (req, res) => {
   );
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.send(workbookBuffer);
+});
+
+/* ====================================================================
+   M-PESA / DARAJA - SANDBOX TESTING (subscription billing)
+   Currently pointed at Safaricom's SANDBOX environment via
+   MPESA_BASE_URL in mpesaService.js. No real money moves in sandbox.
+   ==================================================================== */
+
+/* ------------------------------------------------------------------
+   POST /api/business/:id/subscribe/initiate
+   Body: { phoneNumber, amount }
+     - phoneNumber format: 2547XXXXXXXX (sandbox test number: 254708374149)
+     - amount: whole KES number
+   Triggers a real STK Push prompt to that phone (sandbox = no real money).
+   ------------------------------------------------------------------ */
+app.post("/api/business/:id/subscribe/initiate", async (req, res) => {
+  const { phoneNumber, amount } = req.body || {};
+
+  if (!phoneNumber || !amount) {
+    return res.status(400).json({ error: "phoneNumber and amount are required." });
+  }
+
+  const business = await getBusiness(req.params.id);
+  if (!business) return res.status(404).json({ error: "Business not found." });
+
+  const callbackUrl = process.env.MPESA_CALLBACK_URL;
+  if (!callbackUrl) {
+    return res.status(500).json({ error: "MPESA_CALLBACK_URL is not configured on the server." });
+  }
+
+  try {
+    const stkResponse = await initiateStkPush({
+      phoneNumber,
+      amount,
+      accountReference: business.businessName,
+      transactionDesc: "Duka AI monthly subscription",
+      callbackUrl,
+    });
+
+    await createPaymentAttempt({
+      businessId: business.id,
+      checkoutRequestId: stkResponse.CheckoutRequestID,
+      phoneNumber,
+      amount,
+      accountReference: business.businessName,
+    });
+
+    res.json({
+      message: "STK Push sent. Check the customer's phone to complete payment.",
+      checkoutRequestId: stkResponse.CheckoutRequestID,
+    });
+  } catch (err) {
+    console.error("STK Push initiation failed:", err.message);
+    res.status(502).json({ error: "Could not initiate payment.", detail: err.message });
+  }
+});
+
+/* ------------------------------------------------------------------
+   POST /api/mpesa/callback
+   Daraja calls this automatically once the customer completes (or
+   cancels/fails) the STK Push prompt. Must respond 200 quickly.
+   ------------------------------------------------------------------ */
+app.post("/api/mpesa/callback", async (req, res) => {
+  res.sendStatus(200); // acknowledge immediately, per Daraja's expectations
+
+  try {
+    const callback = req.body?.Body?.stkCallback;
+    if (!callback) {
+      console.warn("M-Pesa callback received with unexpected shape:", JSON.stringify(req.body));
+      return;
+    }
+
+    const checkoutRequestId = callback.CheckoutRequestID;
+    const resultCode = callback.ResultCode;
+    const resultDesc = callback.ResultDesc;
+
+    let mpesaReceiptNumber = null;
+    if (resultCode === 0 && Array.isArray(callback.CallbackMetadata?.Item)) {
+      const receiptItem = callback.CallbackMetadata.Item.find((item) => item.Name === "MpesaReceiptNumber");
+      mpesaReceiptNumber = receiptItem?.Value || null;
+    }
+
+    await recordPaymentResult({ checkoutRequestId, resultCode, resultDesc, mpesaReceiptNumber });
+    console.log(
+      `M-Pesa payment ${checkoutRequestId} -> ${resultCode === 0 ? "COMPLETED" : "FAILED"} (${resultDesc})`
+    );
+  } catch (err) {
+    console.error("Failed to process M-Pesa callback:", err.message);
+  }
+});
+
+/* ------------------------------------------------------------------
+   GET /api/business/:id/payments
+   Preview of this business's subscription payment history.
+   ------------------------------------------------------------------ */
+app.get("/api/business/:id/payments", async (req, res) => {
+  const business = await getBusiness(req.params.id);
+  if (!business) return res.status(404).json({ error: "Business not found." });
+  res.json({ businessId: business.id, payments: await getPaymentsForBusiness(business.id) });
 });
 
 app.listen(PORT, () => {

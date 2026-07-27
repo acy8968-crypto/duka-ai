@@ -124,7 +124,29 @@
               <!-- filled by JS -->
             </div>
 
-            <a href="index.html" class="btn btn-primary btn-block">Done — back to home</a>
+            <div class="connect-box" id="paymentBox" style="text-align:left; margin-top:24px;">
+              <h3 style="font-size:1.02rem; margin-bottom:6px;">Activate your subscription</h3>
+              <p style="margin-bottom:18px;">Pay via M-Pesa to activate your AI agent. You'll get a prompt on your phone to enter your PIN.</p>
+
+              <div class="field-group" style="margin-bottom:14px;">
+                <label for="payPhone">M-Pesa phone number</label>
+                <input type="tel" id="payPhone" placeholder="2547XXXXXXXX" value="254795184838">
+              </div>
+
+              <div class="field-group" style="margin-bottom:14px;">
+                <label for="payAmount">Amount (KES)</label>
+                <input type="text" id="payAmount" value="10">
+              </div>
+
+              <button type="button" class="btn btn-primary btn-block" id="payNowBtn">Pay with M-Pesa</button>
+
+              <div class="connect-status" id="paymentStatus">
+                <div class="spinner" aria-hidden="true"></div>
+                <span id="paymentStatusText">Waiting for payment…</span>
+              </div>
+            </div>
+
+            <a href="index.html" class="btn btn-ghost btn-block" style="margin-top:16px;">Done — back to home</a>
           </div>
         </div>
 
