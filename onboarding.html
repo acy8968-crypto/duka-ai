@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Set up your AI agent — Duka AI</title>
+<meta name="description" content="Tell us about your business and connect your WhatsApp number to launch your AI agent." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <a href="index.html" class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      Duka AI
+    </a>
+    <a href="index.html" class="nav-cta" style="background:transparent;color:var(--ink);border:1.5px solid var(--line);">Back home</a>
+  </div>
+</nav>
+
+<main class="onboard-shell">
+  <div class="container">
+
+    <div class="onboard-head">
+      <span class="eyebrow">Setup</span>
+      <h1 style="font-size:clamp(1.7rem, 3vw, 2.2rem);">Let's build your AI agent</h1>
+      <p>Three quick steps. Most businesses are live the same day.</p>
+    </div>
+
+    <div class="progress" id="progressBar">
+      <div class="progress-step active" data-step="1"></div>
+      <div class="progress-step" data-step="2"></div>
+      <div class="progress-step" data-step="3"></div>
+    </div>
+
+    <div class="onboard-card">
+      <form id="onboardForm" novalidate>
+
+        <!-- ===================== STAGE 1: BUSINESS DETAILS ===================== -->
+        <div class="form-stage active" data-stage="1">
+          <h2 style="font-size:1.3rem;">Tell us about your business</h2>
+          <p style="margin-bottom:28px;">This becomes the foundation of your AI agent's personality and knowledge.</p>
+
+          <div class="field-group" id="group-businessName">
+            <label for="businessName">Business name</label>
+            <input type="text" id="businessName" name="businessName" placeholder="e.g. Mama Njeri's Boutique" required>
+            <p class="field-error">Please enter your business name.</p>
+          </div>
+
+          <div class="field-group" id="group-ownerContact">
+            <label for="ownerContact">Your email or phone (for your account)</label>
+            <input type="text" id="ownerContact" name="ownerContact" placeholder="e.g. njeri@gmail.com or 0712 345 678" required>
+            <p class="field-error">Please enter a valid email or phone number.</p>
+          </div>
+
+          <div class="field-group">
+            <label>What kind of business is this?</label>
+            <div class="tag-row" id="businessTypeTags" role="group" aria-label="Business type">
+              <button type="button" class="tag" data-value="Retail / Shop">Retail / Shop</button>
+              <button type="button" class="tag" data-value="Restaurant / Food">Restaurant / Food</button>
+              <button type="button" class="tag" data-value="Salon / Beauty">Salon / Beauty</button>
+              <button type="button" class="tag" data-value="Service provider">Service provider</button>
+              <button type="button" class="tag" data-value="Other">Other</button>
+            </div>
+          </div>
+
+          <div class="field-group" id="group-description">
+            <label for="description">Describe your business, products, prices, and how you like to talk to customers</label>
+            <textarea id="description" name="description" maxlength="1200" placeholder="e.g. We sell ankara dresses and fabrics in Nairobi. Sizes S–XL, prices between KES 1,500–4,000. We deliver within Nairobi for KES 200. We're friendly and use simple English or Swahili depending on the customer. We're open 8am–7pm every day." required></textarea>
+            <div class="char-count"><span id="charCount">0</span>/1200</div>
+            <p class="field-error">Tell us at least a little about your business so we can build a good AI agent.</p>
+            <p class="field-hint">The more detail here, the better your AI agent will sound and behave. You can always update this later.</p>
+          </div>
+
+          <div class="form-actions">
+            <span></span>
+            <button type="button" class="btn btn-primary" id="toStage2">Continue</button>
+          </div>
+        </div>
+
+        <!-- ===================== STAGE 2: CONNECT WHATSAPP ===================== -->
+        <div class="form-stage" data-stage="2">
+          <h2 style="font-size:1.3rem;">Connect your WhatsApp</h2>
+          <p style="margin-bottom:28px;">This confirms you're the real owner of the number your customers already message.</p>
+
+          <div class="connect-box" id="connectBox">
+            <div class="connect-icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+            </div>
+            <h3>Connect your WhatsApp Business number</h3>
+            <p>You'll sign in through Meta's official verification. A one-time code goes straight to your phone — we never see or store your password.</p>
+            <button type="button" class="btn btn-primary" id="connectBtn">Connect with Meta</button>
+            <div class="connect-status" id="connectStatus">
+              <div class="spinner" aria-hidden="true"></div>
+              <span id="connectStatusText">Waiting for verification…</span>
+            </div>
+          </div>
+
+          <div class="field-group" style="margin-top:24px; display:none;" id="group-phoneManual">
+            <label for="phoneManual">WhatsApp number (auto-filled after connecting)</label>
+            <input type="tel" id="phoneManual" name="phoneManual" placeholder="+254 7XX XXX XXX" readonly>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="btn btn-ghost" id="backToStage1">Back</button>
+            <button type="button" class="btn btn-primary" id="toStage3" disabled>Continue</button>
+          </div>
+        </div>
+
+        <!-- ===================== STAGE 3: SUCCESS ===================== -->
+        <div class="form-stage" data-stage="3">
+          <div class="success-stage">
+            <div class="success-badge" aria-hidden="true">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <h2 style="font-size:1.4rem;">Your AI agent is being built</h2>
+            <p>Here's what we've got. Your agent will be live on WhatsApp shortly.</p>
+
+            <div class="summary-list" id="summaryList">
+              <!-- filled by JS -->
+            </div>
+
+            <div class="connect-box" id="paymentBox" style="text-align:left; margin-top:24px;">
+              <h3 style="font-size:1.02rem; margin-bottom:6px;">Activate your subscription</h3>
+              <p style="margin-bottom:18px;">Pay via M-Pesa to activate your AI agent. You'll get a prompt on your phone to enter your PIN.</p>
+
+              <div class="field-group" style="margin-bottom:14px;">
+                <label for="payPhone">M-Pesa phone number</label>
+                <input type="tel" id="payPhone" placeholder="2547XXXXXXXX" value="254795184838">
+              </div>
+
+              <div class="field-group" style="margin-bottom:14px;">
+                <label for="payAmount">Amount (KES)</label>
+                <input type="text" id="payAmount" value="10">
+              </div>
+
+              <button type="button" class="btn btn-primary btn-block" id="payNowBtn">Pay with M-Pesa</button>
+
+              <div class="connect-status" id="paymentStatus">
+                <div class="spinner" aria-hidden="true"></div>
+                <span id="paymentStatusText">Waiting for payment…</span>
+              </div>
+            </div>
+
+            <a href="index.html" class="btn btn-ghost btn-block" style="margin-top:16px;">Done — back to home</a>
+          </div>
+        </div>
+
+      </form>
+    </div>
+
+  </div>
+</main>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <span>© 2026 Duka AI. Built for businesses in Kenya.</span>
+    <span>Nairobi, Kenya</span>
+  </div>
+</footer>
+
+<script src="script.js"></script>
+
+<!-- ============================================================
+     Meta JS SDK — required for real Embedded Signup (FB.login)
+     Replace YOUR_META_APP_ID below with your real Meta App ID.
+     ============================================================ -->
+<div id="fb-root"></div>
+<script>
+  window.fbAsyncInit = function () {
+    FB.init({
+      appId: "YOUR_META_APP_ID",
+      autoLogAppEvents: true,
+      xfbml: true,
+      version: "v21.0",
+    });
+  };
+</script>
+<script async defer crossorigin="anonymous" src="https://connect.facebook.net/en_US/sdk.js"></script>
+
+</body>
+</html>
