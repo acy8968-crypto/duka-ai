@@ -76,3 +76,19 @@ CREATE TABLE IF NOT EXISTS payments (
 
 CREATE INDEX IF NOT EXISTS idx_payments_business_id
   ON payments (business_id, created_at);
+
+-- Per-call AI token usage, logged against the business that triggered it.
+-- Powers the admin panel's per-client usage tracking.
+CREATE TABLE IF NOT EXISTS token_usage (
+  id                 BIGSERIAL PRIMARY KEY,
+  business_id        TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  call_type          TEXT NOT NULL, -- 'prompt_generation' | 'chat_reply'
+  model              TEXT,
+  prompt_tokens      INTEGER NOT NULL DEFAULT 0,
+  completion_tokens  INTEGER NOT NULL DEFAULT 0,
+  total_tokens       INTEGER NOT NULL DEFAULT 0,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_token_usage_business_id
+  ON token_usage (business_id, created_at);

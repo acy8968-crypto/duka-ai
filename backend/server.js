@@ -2,7 +2,15 @@ require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
-const { generateSystemPrompt, generateReply } = require("./services/geminiService");
+const { generateSystemPrompt, generateReply, getCreditBalance } = require("./services/openrouterService");
+const { logUsage, getUsageSummaryPerBusiness, getTotalUsage, getDailyUsage } = require("./services/tokenUsageStore");
+const {
+  getOverviewStats,
+  listBusinessesWithStats,
+  listRecentPayments,
+  getRevenueByDay,
+  getRecentActivity,
+} = require("./services/adminService");
 const { createBusiness, getBusiness, findByPhoneNumberId, attachWhatsappNumber } = require("./services/businessStore");
 const { exchangeCodeForToken, registerPhoneNumber, subscribeAppToWaba } = require("./services/metaService");
 const { sendTextMessage } = require("./services/whatsappService");
@@ -30,7 +38,7 @@ app.get("/api/health", (req, res) => {
 /* ------------------------------------------------------------------
    POST /api/generate-prompt
    Body: { businessName, businessType, ownerContact, description }
-   -> generates the WhatsApp AI system prompt via Gemini,
+   -> generates the WhatsApp AI system prompt via OpenRouter,
       stores it against a new business record, and returns both.
    ------------------------------------------------------------------ */
 app.post("/api/generate-prompt", async (req, res) => {
@@ -43,7 +51,7 @@ app.post("/api/generate-prompt", async (req, res) => {
   }
 
   try {
-    const systemPrompt = await generateSystemPrompt({ businessName, businessType, description });
+    const { systemPrompt, usage } = await generateSystemPrompt({ businessName, businessType, description });
 
     const business = await createBusiness({
       businessName,
@@ -52,6 +60,9 @@ app.post("/api/generate-prompt", async (req, res) => {
       description,
       systemPrompt,
     });
+
+    // Log token usage against the business now that it has an ID
+    await logUsage(business.id, "prompt_generation", usage);
 
     res.json({
       businessId: business.id,
@@ -214,11 +225,14 @@ async function handleCustomerMessage({ business, customerWaId, messageText }) {
   try {
     const history = await getHistory(business.id, customerWaId);
 
-    const replyText = await generateReply({
+    const { replyText, usage } = await generateReply({
       systemPrompt: business.systemPrompt,
       history,
       customerMessage: messageText,
     });
+
+    // Log token usage for this reply against the business
+    await logUsage(business.id, "chat_reply", usage);
 
     // Update conversation history with both sides of this exchange
     await appendTurn(business.id, customerWaId, "user", messageText);
@@ -375,6 +389,104 @@ app.get("/api/business/:id/payments", async (req, res) => {
   const business = await getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
   res.json({ businessId: business.id, payments: await getPaymentsForBusiness(business.id) });
+});
+
+/* ====================================================================
+   ADMIN PANEL API
+   Everything under /api/admin/* requires a simple shared-secret key,
+   sent as the "x-admin-key" header. This is a lightweight guard fit
+   for a solo-operator dashboard - swap for real auth (sessions/JWT)
+   before adding more admin users.
+   ==================================================================== */
+
+function requireAdminKey(req, res, next) {
+  const providedKey = req.headers["x-admin-key"];
+  const expectedKey = process.env.ADMIN_API_KEY;
+
+  if (!expectedKey) {
+    return res.status(500).json({ error: "ADMIN_API_KEY is not configured on the server." });
+  }
+  if (!providedKey || providedKey !== expectedKey) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+  next();
+}
+
+app.use("/api/admin", requireAdminKey);
+
+/* GET /api/admin/stats - overview numbers for the dashboard's stat cards */
+app.get("/api/admin/stats", async (req, res) => {
+  try {
+    res.json(await getOverviewStats());
+  } catch (err) {
+    console.error("admin/stats failed:", err.message);
+    res.status(500).json({ error: "Could not load stats.", detail: err.message });
+  }
+});
+
+/* GET /api/admin/businesses - businesses list with order/payment totals */
+app.get("/api/admin/businesses", async (req, res) => {
+  try {
+    res.json({ businesses: await listBusinessesWithStats() });
+  } catch (err) {
+    console.error("admin/businesses failed:", err.message);
+    res.status(500).json({ error: "Could not load businesses.", detail: err.message });
+  }
+});
+
+/* GET /api/admin/payments - recent payments across all businesses */
+app.get("/api/admin/payments", async (req, res) => {
+  try {
+    res.json({ payments: await listRecentPayments() });
+  } catch (err) {
+    console.error("admin/payments failed:", err.message);
+    res.status(500).json({ error: "Could not load payments.", detail: err.message });
+  }
+});
+
+/* GET /api/admin/revenue-by-day - for the dashboard revenue chart */
+app.get("/api/admin/revenue-by-day", async (req, res) => {
+  try {
+    res.json({ revenue: await getRevenueByDay(14) });
+  } catch (err) {
+    console.error("admin/revenue-by-day failed:", err.message);
+    res.status(500).json({ error: "Could not load revenue.", detail: err.message });
+  }
+});
+
+/* GET /api/admin/activity - merged recent-events feed for the live ticker */
+app.get("/api/admin/activity", async (req, res) => {
+  try {
+    res.json({ activity: await getRecentActivity(20) });
+  } catch (err) {
+    console.error("admin/activity failed:", err.message);
+    res.status(500).json({ error: "Could not load activity.", detail: err.message });
+  }
+});
+
+/* GET /api/admin/token-usage - per-business AI token usage breakdown */
+app.get("/api/admin/token-usage", async (req, res) => {
+  try {
+    const [perBusiness, total, daily] = await Promise.all([
+      getUsageSummaryPerBusiness(),
+      getTotalUsage(),
+      getDailyUsage(14),
+    ]);
+    res.json({ perBusiness, total, daily });
+  } catch (err) {
+    console.error("admin/token-usage failed:", err.message);
+    res.status(500).json({ error: "Could not load token usage.", detail: err.message });
+  }
+});
+
+/* GET /api/admin/openrouter-credits - live OpenRouter prepaid balance */
+app.get("/api/admin/openrouter-credits", async (req, res) => {
+  try {
+    res.json(await getCreditBalance());
+  } catch (err) {
+    console.error("admin/openrouter-credits failed:", err.message);
+    res.status(502).json({ error: "Could not fetch OpenRouter balance.", detail: err.message });
+  }
 });
 
 app.listen(PORT, () => {
