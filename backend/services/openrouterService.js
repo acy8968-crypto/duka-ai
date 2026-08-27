@@ -140,6 +140,30 @@ async function getCreditBalance() {
     throw new Error("OPENROUTER_API_KEY is not set. Add it to your .env file.");
   }
 
+  // First try the user auth/key endpoint
+  try {
+    const keyRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (keyRes.ok) {
+      const keyData = await keyRes.json();
+      const d = keyData?.data;
+      if (d) {
+        return {
+          totalCredits: d.limit ?? null,
+          totalUsage: d.usage ?? 0,
+          remaining: d.limit_remaining ?? null,
+          usageDaily: d.usage_daily ?? 0,
+          usageWeekly: d.usage_weekly ?? 0,
+          usageMonthly: d.usage_monthly ?? 0,
+          isFreeTier: d.is_free_tier ?? false,
+        };
+      }
+    }
+  } catch (err) {
+    // fallback to credits URL
+  }
+
   const res = await fetch(OPENROUTER_CREDITS_URL, {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
