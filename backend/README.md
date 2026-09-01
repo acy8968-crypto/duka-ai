@@ -388,3 +388,247 @@ confirm the earlier export step still works unchanged.
 
 M-Pesa subscription billing — charge businesses monthly via the Daraja API.
 
+---
+
+## Step 7: M-Pesa Sandbox Testing (STK Push) — now built
+
+This lets you trigger a real M-Pesa "enter your PIN" payment prompt on a
+phone, using Safaricom's free Daraja sandbox — no real money moves, no
+business registration needed for this stage.
+
+### Setup
+
+1. Sign up at [developer.safaricom.co.ke](https://developer.safaricom.co.ke)
+2. Go to **My Apps → Add a New App**, select **"Lipa Na M-Pesa Sandbox"**
+   as the product, and create it.
+3. Copy the **Consumer Key** and **Consumer Secret** it gives you.
+4. In `.env`, set:
+   ```
+   MPESA_CONSUMER_KEY=your_key
+   MPESA_CONSUMER_SECRET=your_secret
+   ```
+   The `MPESA_SHORTCODE` (174379) and `MPESA_PASSKEY` in `.env.example`
+   are Safaricom's shared sandbox test values — safe to use as-is, no
+   need to look them up yourself.
+5. Set `MPESA_CALLBACK_URL` to a public HTTPS URL (same ngrok tunnel used
+   for the WhatsApp webhook works fine) ending in `/api/mpesa/callback`.
+6. Run the updated schema (`schema.sql`) again if your database was set
+   up before this step — it now includes a new `payments` table
+   (existing tables are left untouched; safe to re-run).
+
+### How it works
+
+1. `POST /api/business/:id/subscribe/initiate` with a phone number and
+   amount triggers a real STK Push - the customer's phone gets a payment
+   prompt within seconds.
+2. The attempt is logged in the new `payments` table with status `pending`.
+3. Once the customer enters their PIN (or cancels/it times out), Safaricom
+   calls `POST /api/mpesa/callback` with the result.
+4. The payment record is updated to `completed` or `failed`, along with
+   the M-Pesa receipt number if successful.
+5. `GET /api/business/:id/payments` shows that business's payment history.
+
+### Try it
+
+With the server running and `MPESA_CALLBACK_URL` pointed at a live ngrok
+tunnel:
+```bash
+curl -X POST http://localhost:3000/api/business/YOUR_BUSINESS_ID/subscribe/initiate \
+  -H "Content-Type: application/json" \
+  -d '{"phoneNumber": "254708374149", "amount": 10}'
+```
+`254708374149` is Safaricom's standard sandbox test number — in sandbox
+you can also use your own real Safaricom number and no actual money will
+be charged.
+
+### What's still simplified / not done
+
+- **No automatic recurring billing yet** - this triggers one payment at a
+  time; a real subscription system would need a scheduled job to trigger
+  this monthly per business and handle non-payment (e.g. pausing their AI
+  agent).
+- **Sandbox only** - going to production requires a registered business,
+  a real Paybill/Till number connected to Daraja, and Safaricom's go-live
+  review process, same as the WhatsApp path.
+- **No retry logic** for failed payments yet.
+
+### Next build step
+
+Deployment — putting the site and backend somewhere live, plus wiring
+recurring subscription charges on a schedule.
+
+---
+
+## Step 8: AI Provider Switched to OpenRouter — now built
+
+`geminiService.js` has been replaced by `openrouterService.js` as the AI
+provider for both prompt generation and live chat replies. Same job,
+different backend - routed through [OpenRouter](https://openrouter.ai)
+instead of calling Gemini directly.
+
+### Why switch
+
+- A single API that can call many different models, not just Gemini
+- A real prepaid credit balance you can check via API (Gemini's free tier
+  only has rate limits, no queryable balance)
+- Every response includes token usage, which is what powers the new
+  per-business usage tracking below
+
+### Setup
+
+1. Sign up at [openrouter.ai](https://openrouter.ai) and grab a free API key
+   from [openrouter.ai/keys](https://openrouter.ai/keys)
+2. Add credit to your OpenRouter account (even a small amount like $5 goes
+   a long way for testing)
+3. Set `OPENROUTER_API_KEY` in `.env`
+4. `OPENROUTER_MODEL` defaults to `google/gemini-2.5-flash` if not set -
+   change it to try a different model (see openrouter.ai/models for options)
+
+### What changed under the hood
+
+- `generateSystemPrompt()` and `generateReply()` keep the same names as
+  before, but now return `{ systemPrompt, usage }` and `{ replyText, usage }`
+  respectively (previously just a plain string) - `server.js` was updated
+  to match.
+- Every AI call's token usage is now logged to a new `token_usage` table
+  via `tokenUsageStore.js`, tagged against the business that triggered it.
+- `geminiService.js` is left in the codebase, unused, in case you want to
+  roll back - it's not deleted, just no longer imported by `server.js`.
+
+### Tested
+
+Verified end-to-end against a real Postgres database: logged token usage
+for multiple businesses, confirmed per-business totals, overall totals,
+and daily breakdowns all calculate correctly. The actual OpenRouter API
+call itself (network request) could not be tested from this environment,
+so double-check your first real prompt generation once your API key is in
+place.
+
+---
+
+## Step 9: Admin Panel API — now built
+
+A set of `/api/admin/*` routes providing everything an admin dashboard
+needs: overview stats, business list, payment history, revenue trend,
+a live activity feed, per-business token usage, and your live OpenRouter
+credit balance.
+
+### Setup
+
+Set `ADMIN_API_KEY` in `.env` to any secret string you choose. Every
+`/api/admin/*` route requires this exact value in an `x-admin-key`
+request header, or it returns `401 Unauthorized`.
+
+### Routes
+
+| Route | Returns |
+|---|---|
+| `GET /api/admin/stats` | Total businesses, connected count, total orders, payment counts by status, total revenue |
+| `GET /api/admin/businesses` | List of businesses with order count and total paid |
+| `GET /api/admin/payments` | Recent payments across all businesses |
+| `GET /api/admin/revenue-by-day` | Last 14 days of revenue, for a chart |
+| `GET /api/admin/activity` | Merged recent signups/orders/payments, time-sorted, for a live feed |
+| `GET /api/admin/token-usage` | Per-business and total AI token usage, plus a 14-day daily trend |
+| `GET /api/admin/openrouter-credits` | Your live OpenRouter prepaid balance |
+
+### Try it
+
+```bash
+curl -H "x-admin-key: YOUR_ADMIN_API_KEY" http://localhost:3000/api/admin/stats
+```
+
+### Tested
+
+Every route above was tested end-to-end against a real Postgres database
+with seeded businesses, orders, payments, and token usage - all numbers
+confirmed accurate, including that revenue only counts *completed*
+payments and the activity feed correctly merges and sorts events from
+three different tables. Auth was also tested: confirmed missing/wrong
+keys return 401, correct key returns 200.
+
+### What's still simplified / not done
+
+- **Single shared admin key** - fine for a solo operator, but doesn't
+  support multiple admin users or permission levels. Move to real
+  auth (sessions/JWT per user) if that becomes necessary.
+- **No pagination yet** on `/businesses` or `/payments` - both cap at 50
+  results. Fine for early scale, will need pagination as the business grows.
+
+### Next build step
+
+Build the actual admin panel frontend (PWA) that consumes these routes.
+
+---
+
+## Step 10: Free Trial & Automatic Billing — now built
+
+Backs the "free 7-day trial, then billed automatically" promise on the
+website. Without this, trials would never actually convert to paying
+subscriptions - someone would have to manually remember to charge every
+business after 7 days.
+
+### How it works
+
+1. After a business connects WhatsApp, the website calls
+   `POST /api/business/:id/subscription` with a plan (`starter`, `growth`,
+   or `pro`) and their M-Pesa number. This starts a 7-day trial - no
+   charge yet.
+2. A background billing cycle (an in-process timer, see
+   `BILLING_CYCLE_INTERVAL_MS` in `.env.example`, hourly by default) checks
+   for:
+   - Trials whose 7 days have run out
+   - Active subscriptions whose 30-day billing period has ended
+3. For each one found, it automatically triggers a real STK Push via
+   `mpesaService.js` and logs the attempt, linked to that subscription.
+4. When Daraja calls back to `/api/mpesa/callback`, if the payment is
+   linked to a subscription, that subscription is automatically marked
+   `active` (and its period extended 30 days) on success, or `past_due`
+   on failure - no manual intervention needed either way.
+5. The manual "Pay with M-Pesa" button from Step 7 still works
+   independently, for anyone who wants to pay immediately instead of
+   waiting out the trial.
+
+### New routes
+
+| Route | Purpose |
+|---|---|
+| `POST /api/business/:id/subscription` | Starts a trial (`{ plan, phoneNumber }`) |
+| `GET /api/business/:id/subscription` | Fetch current subscription/trial status |
+
+### Tested
+
+The full lifecycle was tested against a real Postgres database: trial
+creation (confirmed it defaults to exactly 7 days out and doesn't fire
+early), expiry detection (by deliberately backdating `trial_ends_at`),
+activation extending the period by 30 days, renewal-due detection, and
+past-due handling on failed payments - all confirmed correct. The billing
+cycle's orchestration logic was also tested end-to-end with a stubbed
+M-Pesa call (since a real STK Push can't be triggered from this
+environment), confirming it correctly identifies due subscriptions,
+triggers a charge with the exact right phone number and amount, and
+creates a properly linked payment record.
+
+### What's still simplified / not done
+
+- **Single-instance billing scheduler** - the `setInterval` approach in
+  `server.js` works for one running server process, but would
+  double-charge businesses if you ever ran multiple server instances.
+  Move to a proper external cron/worker (not an in-process timer) before
+  scaling beyond one instance.
+- **No dunning/retry logic** - a `past_due` subscription stays past_due
+  until the next billing cycle happens to retry it (up to
+  `BILLING_CYCLE_INTERVAL_MS` later). No escalating retry schedule or
+  "your payment failed" notification to the business owner yet.
+- **No enforcement of plan limits** - the conversation limits shown on
+  the pricing page (300/1,000/3,000+ per month) aren't currently
+  measured or enforced anywhere in the code. A business on any plan can
+  use the product without limit right now.
+- **Trial doesn't block product usage** - a business's AI agent works
+  identically whether they're trialing, active, or even past_due. Nothing
+  currently pauses a business's AI agent for non-payment.
+
+### Next build step
+
+Deployment, plus deciding whether/how to enforce plan limits and pause
+access for past_due subscriptions.
+

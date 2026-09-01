@@ -9,12 +9,12 @@
 
 const { pool } = require("../db");
 
-async function createPaymentAttempt({ businessId, checkoutRequestId, phoneNumber, amount, accountReference }) {
+async function createPaymentAttempt({ businessId, checkoutRequestId, phoneNumber, amount, accountReference, subscriptionId = null }) {
   const result = await pool.query(
-    `INSERT INTO payments (checkout_request_id, business_id, phone_number, amount, account_reference, status)
-     VALUES ($1, $2, $3, $4, $5, 'pending')
+    `INSERT INTO payments (checkout_request_id, business_id, phone_number, amount, account_reference, status, subscription_id)
+     VALUES ($1, $2, $3, $4, $5, 'pending', $6)
      RETURNING *`,
-    [checkoutRequestId, businessId, phoneNumber, amount, accountReference]
+    [checkoutRequestId, businessId, phoneNumber, amount, accountReference, subscriptionId]
   );
   return result.rows[0];
 }

@@ -226,6 +226,24 @@ a { color: inherit; }
 
 .hero-note svg { flex-shrink: 0; color: var(--teal); }
 
+.hero-demo-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: rgba(31, 111, 92, 0.09);
+  border: 1px solid rgba(31, 111, 92, 0.25);
+  color: var(--teal-deep);
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.hero-demo-link:hover { background: rgba(31, 111, 92, 0.16); transform: translateY(-1px); }
+.hero-demo-link svg { flex-shrink: 0; }
+
 /* ---- Phone mockup (signature element) ---- */
 .phone-wrap {
   position: relative;

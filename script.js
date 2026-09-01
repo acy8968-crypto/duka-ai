@@ -9,9 +9,7 @@
    ============================================================ */
 
 // Change this if your backend runs somewhere other than localhost:3000
-const API_BASE_URL = window.location.protocol === "https:"
-  ? "https://monday-scenic-relive.ngrok-free.dev"
-  : "http://localhost:3000";
+const API_BASE_URL = "http://localhost:3000";
 
 // From Meta App Dashboard > WhatsApp > Embedded Signup Builder
 const META_EMBEDDED_SIGNUP_CONFIG_ID = "YOUR_EMBEDDED_SIGNUP_CONFIG_ID";
@@ -60,7 +58,15 @@ function initOnboardingForm() {
     systemPrompt: "",
     whatsappNumber: "",
     whatsappConnected: false,
+    selectedPlan: "starter",
   };
+
+  // Which plan the visitor picked on the pricing section (?plan=starter|growth|pro)
+  const VALID_PLANS = ["starter", "growth", "pro"];
+  const urlPlan = new URLSearchParams(window.location.search).get("plan");
+  if (VALID_PLANS.includes(urlPlan)) {
+    state.selectedPlan = urlPlan;
+  }
 
   const stages = document.querySelectorAll(".form-stage");
   const progressSteps = document.querySelectorAll(".progress-step");
@@ -159,13 +165,10 @@ function initOnboardingForm() {
 
       goToStage(2);
     } catch (err) {
-      console.warn("generate-prompt failed, using demo fallback business ID for testing:", err);
-      state.businessId = "biz_1784923571939_318";
-      state.systemPrompt = `You are the WhatsApp AI agent for ${state.businessName}. Demo test mode.`;
-      state.whatsappNumber = "1005106942684583";
-      state.whatsappConnected = true;
-      document.getElementById("toStage3").disabled = false;
-      goToStage(2);
+      console.error("generate-prompt failed:", err);
+      stage1ErrorBanner.textContent =
+        "We couldn't reach the AI agent builder. Make sure the backend server is running, then try again.";
+      stage1ErrorBanner.style.display = "block";
     } finally {
       toStage2Btn.disabled = false;
       toStage2Btn.textContent = originalLabel;
@@ -321,6 +324,72 @@ function initOnboardingForm() {
     }
 
     goToStage(3);
+
+    // Show the trial-start box by default (not the immediate-payment box)
+    document.getElementById("trialBox").style.display = "block";
+  });
+
+  /* ---------- Free trial start ---------- */
+
+  const trialBox = document.getElementById("trialBox");
+  const trialPhoneInput = document.getElementById("trialPhone");
+  const trialFormFields = document.getElementById("trialFormFields");
+  const startTrialBtn = document.getElementById("startTrialBtn");
+  const showPayNowBtn = document.getElementById("showPayNowBtn");
+  const trialStatus = document.getElementById("trialStatus");
+  const trialStatusText = document.getElementById("trialStatusText");
+  const trialHeading = document.getElementById("trialHeading");
+  const trialText = document.getElementById("trialText");
+
+  const PLAN_LABELS = { starter: "Starter", growth: "Growth", pro: "Pro" };
+
+  startTrialBtn.addEventListener("click", async () => {
+    const phoneNumber = trialPhoneInput.value.trim();
+
+    if (!/^254\d{9}$/.test(phoneNumber)) {
+      trialStatus.classList.add("visible");
+      trialStatusText.textContent = "Enter a valid number in the format 2547XXXXXXXX.";
+      return;
+    }
+
+    startTrialBtn.disabled = true;
+    startTrialBtn.textContent = "Starting…";
+    trialStatus.classList.add("visible");
+    trialStatusText.textContent = "Setting up your trial…";
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/business/${state.businessId}/subscription`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plan: state.selectedPlan, phoneNumber }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not start your trial.");
+
+      const trialEndDate = new Date(data.trialEndsAt);
+      const formattedDate = trialEndDate.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+
+      trialHeading.textContent = `Your ${PLAN_LABELS[state.selectedPlan]} trial has started`;
+      trialText.textContent = `No charge until ${formattedDate}. We'll automatically bill ${phoneNumber} via M-Pesa when your trial ends — cancel anytime before then.`;
+      trialFormFields.style.display = "none";
+      startTrialBtn.style.display = "none";
+      trialStatus.classList.remove("visible");
+    } catch (err) {
+      console.error("start-trial failed:", err);
+      trialStatusText.textContent = "Couldn't start your trial. Make sure the backend is running and try again.";
+      startTrialBtn.disabled = false;
+      startTrialBtn.textContent = "Start free trial";
+    }
+  });
+
+  showPayNowBtn.addEventListener("click", () => {
+    trialBox.style.display = "none";
+    document.getElementById("paymentBox").style.display = "block";
   });
 
   /* ---------- M-Pesa subscription payment (sandbox) ---------- */
@@ -357,10 +426,7 @@ function initOnboardingForm() {
     try {
       const res = await fetch(`${API_BASE_URL}/api/business/${state.businessId}/subscribe/initiate`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "ngrok-skip-browser-warning": "true"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phoneNumber, amount }),
       });
 
@@ -377,30 +443,23 @@ function initOnboardingForm() {
           clearInterval(pollTimer);
           pollTimer = null;
           if (paymentStatusText.textContent.includes("Check your phone")) {
-            paymentStatusText.textContent = "STK Push sent to phone (Sandbox test mode).";
+            paymentStatusText.textContent = "No response yet — you can try again if needed.";
             payNowBtn.disabled = false;
             payNowBtn.textContent = "Pay with M-Pesa";
           }
         }
       }, 120000);
     } catch (err) {
-      console.warn("STK Push fetch failed or intercepted by browser/cors, running sandbox UI simulation:", err);
-      paymentStatusText.textContent = "Check your phone for the M-Pesa PIN prompt…";
-      setTimeout(() => {
-        paymentBox.style.borderStyle = "solid";
-        paymentBox.style.borderColor = "var(--teal)";
-        paymentStatusText.textContent = "Payment received! Receipt: QXH89210KS (Sandbox test mode)";
-        payNowBtn.disabled = true;
-        payNowBtn.textContent = "Paid";
-      }, 3500);
+      console.error("STK Push failed:", err);
+      paymentStatusText.textContent = "Couldn't start payment. Make sure the backend is running and try again.";
+      payNowBtn.disabled = false;
+      payNowBtn.textContent = "Pay with M-Pesa";
     }
   });
 
   async function pollPaymentStatus(checkoutRequestId) {
     try {
-      const res = await fetch(`${API_BASE_URL}/api/business/${state.businessId}/payments`, {
-        headers: { "ngrok-skip-browser-warning": "true" }
-      });
+      const res = await fetch(`${API_BASE_URL}/api/business/${state.businessId}/payments`);
       const data = await res.json();
       const match = (data.payments || []).find((p) => p.checkout_request_id === checkoutRequestId);
 

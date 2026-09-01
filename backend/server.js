@@ -11,6 +11,8 @@ const {
   getRevenueByDay,
   getRecentActivity,
 } = require("./services/adminService");
+const subscriptionStore = require("./services/subscriptionStore");
+const { runBillingCycle } = require("./services/billingService");
 const { createBusiness, getBusiness, findByPhoneNumberId, attachWhatsappNumber } = require("./services/businessStore");
 const { exchangeCodeForToken, registerPhoneNumber, subscribeAppToWaba } = require("./services/metaService");
 const { sendTextMessage } = require("./services/whatsappService");
@@ -38,7 +40,7 @@ app.get("/api/health", (req, res) => {
 /* ------------------------------------------------------------------
    POST /api/generate-prompt
    Body: { businessName, businessType, ownerContact, description }
-   -> generates the WhatsApp AI system prompt via OpenRouter,
+   -> generates the WhatsApp AI system prompt via Gemini,
       stores it against a new business record, and returns both.
    ------------------------------------------------------------------ */
 app.post("/api/generate-prompt", async (req, res) => {
@@ -372,10 +374,22 @@ app.post("/api/mpesa/callback", async (req, res) => {
       mpesaReceiptNumber = receiptItem?.Value || null;
     }
 
-    await recordPaymentResult({ checkoutRequestId, resultCode, resultDesc, mpesaReceiptNumber });
+    const payment = await recordPaymentResult({ checkoutRequestId, resultCode, resultDesc, mpesaReceiptNumber });
     console.log(
       `M-Pesa payment ${checkoutRequestId} -> ${resultCode === 0 ? "COMPLETED" : "FAILED"} (${resultDesc})`
     );
+
+    // If this payment came from a subscription (trial conversion or
+    // renewal, via billingService.js), update that subscription's status.
+    if (payment?.subscription_id) {
+      if (resultCode === 0) {
+        await subscriptionStore.activateAfterPayment(payment.subscription_id);
+        console.log(`Subscription ${payment.subscription_id} activated.`);
+      } else {
+        await subscriptionStore.markPastDue(payment.subscription_id);
+        console.log(`Subscription ${payment.subscription_id} marked past_due.`);
+      }
+    }
   } catch (err) {
     console.error("Failed to process M-Pesa callback:", err.message);
   }
@@ -488,6 +502,83 @@ app.get("/api/admin/openrouter-credits", async (req, res) => {
     res.status(502).json({ error: "Could not fetch OpenRouter balance.", detail: err.message });
   }
 });
+
+/* ====================================================================
+   SUBSCRIPTIONS & AUTOMATIC BILLING
+   Backs the "free 7-day trial, then billed automatically" promise on
+   the website - without this, trials would never actually convert.
+   ==================================================================== */
+
+const PLAN_PRICES = { starter: 1999, growth: 4999, pro: 9999 };
+
+/* ------------------------------------------------------------------
+   POST /api/business/:id/subscription
+   Body: { plan, phoneNumber }
+   Starts a 7-day free trial for this business on the given plan. Call
+   this once, right after a business connects their WhatsApp number.
+   ------------------------------------------------------------------ */
+app.post("/api/business/:id/subscription", async (req, res) => {
+  const { plan, phoneNumber } = req.body || {};
+
+  if (!plan || !PLAN_PRICES[plan]) {
+    return res.status(400).json({ error: `plan must be one of: ${Object.keys(PLAN_PRICES).join(", ")}` });
+  }
+  if (!phoneNumber) {
+    return res.status(400).json({ error: "phoneNumber is required." });
+  }
+
+  const business = await getBusiness(req.params.id);
+  if (!business) return res.status(404).json({ error: "Business not found." });
+
+  const existing = await subscriptionStore.getSubscriptionByBusiness(business.id);
+  if (existing) {
+    return res.status(409).json({ error: "This business already has a subscription.", subscription: existing });
+  }
+
+  try {
+    const subscription = await subscriptionStore.createSubscription({
+      businessId: business.id,
+      plan,
+      monthlyAmount: PLAN_PRICES[plan],
+      phoneNumber,
+    });
+    res.json(subscription);
+  } catch (err) {
+    console.error("create-subscription failed:", err.message);
+    res.status(500).json({ error: "Could not start subscription.", detail: err.message });
+  }
+});
+
+/* ------------------------------------------------------------------
+   GET /api/business/:id/subscription
+   Fetch the current subscription/trial status for a business - used by
+   the website to show "trial ends in N days" style messaging.
+   ------------------------------------------------------------------ */
+app.get("/api/business/:id/subscription", async (req, res) => {
+  const business = await getBusiness(req.params.id);
+  if (!business) return res.status(404).json({ error: "Business not found." });
+
+  const subscription = await subscriptionStore.getSubscriptionByBusiness(business.id);
+  if (!subscription) return res.status(404).json({ error: "No subscription found for this business." });
+
+  res.json(subscription);
+});
+
+/* ------------------------------------------------------------------
+   Billing scheduler - periodically checks for expired trials and
+   subscriptions due for renewal, and charges them automatically.
+
+   NOTE: this in-process setInterval is fine for a single server
+   instance, but won't work correctly if you ever run multiple server
+   processes/instances (each would run its own billing cycle and could
+   double-charge). Move to a proper external cron/worker before scaling
+   past one instance.
+   ------------------------------------------------------------------ */
+const BILLING_CYCLE_INTERVAL_MS = Number(process.env.BILLING_CYCLE_INTERVAL_MS) || 60 * 60 * 1000; // hourly by default
+
+setInterval(() => {
+  runBillingCycle().catch((err) => console.error("Billing cycle failed:", err.message));
+}, BILLING_CYCLE_INTERVAL_MS);
 
 app.listen(PORT, () => {
   console.log(`Duka AI backend running at http://localhost:${PORT}`);

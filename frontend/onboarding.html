@@ -124,9 +124,27 @@
               <!-- filled by JS -->
             </div>
 
-            <div class="connect-box" id="paymentBox" style="text-align:left; margin-top:24px;">
-              <h3 style="font-size:1.02rem; margin-bottom:6px;">Activate your subscription</h3>
-              <p style="margin-bottom:18px;">Pay via M-Pesa to activate your AI agent. You'll get a prompt on your phone to enter your PIN.</p>
+            <div class="connect-box" id="trialBox" style="text-align:left; margin-top:24px; display:none;">
+              <h3 style="font-size:1.02rem; margin-bottom:6px;" id="trialHeading">Start your free 7-day trial</h3>
+              <p id="trialText" style="margin-bottom:14px;">You won't be charged for 7 days. We'll automatically bill this M-Pesa number when the trial ends — cancel anytime before then.</p>
+
+              <div class="field-group" id="trialFormFields" style="margin-bottom:14px;">
+                <label for="trialPhone">M-Pesa number for billing</label>
+                <input type="tel" id="trialPhone" placeholder="2547XXXXXXXX" value="254795184838">
+              </div>
+
+              <button type="button" class="btn btn-primary btn-block" id="startTrialBtn">Start free trial</button>
+              <button type="button" class="btn btn-ghost btn-block" id="showPayNowBtn" style="margin-top:10px;">Pay now instead</button>
+
+              <div class="connect-status" id="trialStatus">
+                <div class="spinner" aria-hidden="true"></div>
+                <span id="trialStatusText">Starting your trial…</span>
+              </div>
+            </div>
+
+            <div class="connect-box" id="paymentBox" style="text-align:left; margin-top:24px; display:none;">
+              <h3 style="font-size:1.02rem; margin-bottom:6px;">Pay now with M-Pesa</h3>
+              <p style="margin-bottom:18px;">You'll get a prompt on your phone to enter your PIN. This activates your subscription immediately instead of waiting for the trial to end.</p>
 
               <div class="field-group" style="margin-bottom:14px;">
                 <label for="payPhone">M-Pesa phone number</label>

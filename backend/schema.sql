@@ -92,3 +92,29 @@ CREATE TABLE IF NOT EXISTS token_usage (
 
 CREATE INDEX IF NOT EXISTS idx_token_usage_business_id
   ON token_usage (business_id, created_at);
+
+-- Tracks each business's subscription plan, trial period, and billing
+-- cycle. Separate from `payments`, which logs individual STK Push
+-- attempts - a subscription can have many payment attempts over time.
+CREATE TABLE IF NOT EXISTS subscriptions (
+  id                   TEXT PRIMARY KEY,
+  business_id          TEXT NOT NULL REFERENCES businesses(id) ON DELETE CASCADE,
+  plan                 TEXT NOT NULL, -- 'starter' | 'growth' | 'pro'
+  monthly_amount       NUMERIC NOT NULL,
+  phone_number         TEXT NOT NULL, -- M-Pesa number to bill
+  status               TEXT NOT NULL DEFAULT 'trialing', -- trialing | active | past_due | canceled
+  trial_ends_at        TIMESTAMPTZ NOT NULL,
+  current_period_end   TIMESTAMPTZ, -- set once the first real payment succeeds
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+  canceled_at          TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_business_id
+  ON subscriptions (business_id);
+
+CREATE INDEX IF NOT EXISTS idx_subscriptions_billing_lookup
+  ON subscriptions (status, trial_ends_at, current_period_end);
+
+-- Link payments to the subscription that triggered them (nullable, since
+-- the manual "pay now" button doesn't always originate from a subscription).
+ALTER TABLE payments ADD COLUMN IF NOT EXISTS subscription_id TEXT REFERENCES subscriptions(id);
