@@ -140,45 +140,45 @@ async function getCreditBalance() {
     throw new Error("OPENROUTER_API_KEY is not set. Add it to your .env file.");
   }
 
-  // First try the user auth/key endpoint
+  // First try the account-level credits endpoint (returns real account balance e.g. $1.35)
   try {
-    const keyRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
+    const res = await fetch(OPENROUTER_CREDITS_URL, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
-    if (keyRes.ok) {
-      const keyData = await keyRes.json();
-      const d = keyData?.data;
-      if (d) {
-        return {
-          totalCredits: d.limit ?? null,
-          totalUsage: d.usage ?? 0,
-          remaining: d.limit_remaining ?? null,
-          usageDaily: d.usage_daily ?? 0,
-          usageWeekly: d.usage_weekly ?? 0,
-          usageMonthly: d.usage_monthly ?? 0,
-          isFreeTier: d.is_free_tier ?? false,
-        };
+    if (res.ok) {
+      const data = await res.json();
+      const totalCredits = data?.data?.total_credits ?? null;
+      const totalUsage = data?.data?.total_usage ?? null;
+      const remaining = totalCredits !== null && totalUsage !== null ? totalCredits - totalUsage : null;
+      if (remaining !== null) {
+        return { totalCredits, totalUsage, remaining };
       }
     }
   } catch (err) {
-    // fallback to credits URL
+    // fallback to auth/key
   }
 
-  const res = await fetch(OPENROUTER_CREDITS_URL, {
+  // Fallback to key-specific limit
+  const keyRes = await fetch("https://openrouter.ai/api/v1/auth/key", {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
-
-  const data = await res.json();
-
-  if (!res.ok) {
-    throw new Error(`OpenRouter credits check failed: ${JSON.stringify(data)}`);
+  if (keyRes.ok) {
+    const keyData = await keyRes.json();
+    const d = keyData?.data;
+    if (d) {
+      return {
+        totalCredits: d.limit ?? null,
+        totalUsage: d.usage ?? 0,
+        remaining: d.limit_remaining ?? null,
+        usageDaily: d.usage_daily ?? 0,
+        usageWeekly: d.usage_weekly ?? 0,
+        usageMonthly: d.usage_monthly ?? 0,
+        isFreeTier: d.is_free_tier ?? false,
+      };
+    }
   }
 
-  const totalCredits = data?.data?.total_credits ?? null;
-  const totalUsage = data?.data?.total_usage ?? null;
-  const remaining = totalCredits !== null && totalUsage !== null ? totalCredits - totalUsage : null;
-
-  return { totalCredits, totalUsage, remaining };
+  return { totalCredits: null, totalUsage: null, remaining: null };
 }
 
 module.exports = { generateSystemPrompt, generateReply, buildMetaPrompt, getCreditBalance };

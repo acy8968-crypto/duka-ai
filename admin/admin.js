@@ -7,8 +7,11 @@
  * ------------------------------------------------------------------
  */
 
-// Change this if your backend runs somewhere other than localhost:3000
-const API_BASE_URL = "http://localhost:3000";
+// Matches current hostname (localhost vs 127.0.0.1) to prevent Private Network Access restrictions
+const API_BASE_URL =
+  window.location.hostname === "127.0.0.1"
+    ? "http://127.0.0.1:3000"
+    : "http://localhost:3000";
 
 const REFRESH_INTERVAL_MS = 30000; // auto-refresh every 30s
 
