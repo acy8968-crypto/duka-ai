@@ -1,0 +1,370 @@
+/* ============================================
+   DESIGN TOKENS
+   ============================================ */
+:root {
+  --paper: #EEF1F6;
+  --surface: #FFFFFF;
+  --ink: #1A2233;
+  --ink-muted: #5B6478;
+  --hairline: #DCE1EA;
+
+  --signal-green: #16A34A;
+  --signal-green-bg: #EAF7EF;
+  --signal-amber: #D97706;
+  --signal-amber-bg: #FDF3E3;
+  --signal-red: #DC2626;
+  --signal-red-bg: #FCEAEA;
+  --signal-indigo: #4F46E5;
+  --signal-indigo-bg: #EEEDFC;
+
+  --font-display: "Space Grotesk", -apple-system, sans-serif;
+  --font-body: "Inter", -apple-system, sans-serif;
+  --font-mono: "IBM Plex Mono", monospace;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --max-width: 1240px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { font-family: var(--font-display); margin: 0; color: var(--ink); }
+p { margin: 0; }
+a { color: inherit; }
+button { font-family: inherit; }
+
+.container { max-width: var(--max-width); margin: 0 auto; padding: 0 20px; }
+
+/* ============================================
+   LOGIN GATE
+   ============================================ */
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 32px;
+}
+
+.login-mark {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--signal-indigo);
+  margin-bottom: 20px;
+}
+
+.login-card h1 { font-size: 1.3rem; margin-bottom: 6px; }
+.login-card p { color: var(--ink-muted); font-size: 0.88rem; margin-bottom: 22px; }
+
+.login-card input {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  padding: 11px 13px;
+  border: 1.5px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.login-card input:focus { outline: none; border-color: var(--signal-indigo); background: var(--surface); }
+
+.login-error {
+  color: var(--signal-red);
+  font-size: 0.82rem;
+  margin-top: 10px;
+  display: none;
+}
+.login-error.visible { display: block; }
+
+/* ============================================
+   BUTTONS
+   ============================================ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 11px 18px;
+  border-radius: var(--radius-sm);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+.btn:focus-visible { outline: 2px solid var(--signal-indigo); outline-offset: 2px; }
+.btn-primary { background: var(--ink); color: #fff; width: 100%; }
+.btn-primary:hover { background: #2A3548; }
+.btn-icon {
+  background: transparent;
+  border: 1px solid var(--hairline);
+  color: var(--ink-muted);
+  padding: 8px 12px;
+}
+.btn-icon:hover { border-color: var(--ink-muted); color: var(--ink); }
+
+/* ============================================
+   APP SHELL / TOPBAR
+   ============================================ */
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--ink);
+  color: #fff;
+}
+
+.topbar-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  background: var(--signal-indigo);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--signal-green);
+  flex-shrink: 0;
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+/* ---- Ticker: the one bold element ---- */
+.ticker-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  height: 20px;
+  mask-image: linear-gradient(90deg, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+.ticker-track {
+  display: flex;
+  gap: 40px;
+  position: absolute;
+  white-space: nowrap;
+  animation: ticker-scroll 30s linear infinite;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  color: rgba(255,255,255,0.75);
+}
+.ticker-track span { display: inline-flex; align-items: center; gap: 8px; }
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ticker-empty { color: rgba(255,255,255,0.4); font-size: 0.78rem; font-family: var(--font-mono); }
+
+/* ============================================
+   LAYOUT
+   ============================================ */
+.page { padding: 28px 0 60px; }
+
+.page-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.page-head h1 { font-size: 1.5rem; }
+.page-head .subtitle { color: var(--ink-muted); font-size: 0.86rem; margin-top: 4px; }
+
+/* ============================================
+   STAT LEDGER ROW (not cards - deliberate)
+   ============================================ */
+.stat-ledger {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin-bottom: 28px;
+  overflow: hidden;
+}
+.stat-cell {
+  padding: 18px 20px;
+  border-right: 1px solid var(--hairline);
+}
+.stat-cell:last-child { border-right: none; }
+.stat-label {
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+.stat-value.green { color: var(--signal-green); }
+.stat-value.amber { color: var(--signal-amber); }
+.stat-value.red { color: var(--signal-red); }
+.stat-value.indigo { color: var(--signal-indigo); }
+.stat-sub { font-size: 0.72rem; color: var(--ink-muted); margin-top: 4px; }
+
+/* ============================================
+   PANELS
+   ============================================ */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+  margin-bottom: 24px;
+  align-items: start;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--hairline);
+}
+.panel-head h2 { font-size: 0.95rem; }
+.panel-head .count { font-family: var(--font-mono); font-size: 0.76rem; color: var(--ink-muted); }
+.panel-body { padding: 16px 20px; }
+.panel-empty {
+  padding: 32px 20px;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+}
+
+/* ============================================
+   TABLES
+   ============================================ */
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+th {
+  text-align: left;
+  font-weight: 600;
+  font-size: 0.72rem;
+  color: var(--ink-muted);
+  padding: 0 20px 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+td { padding: 12px 20px; border-bottom: 1px solid var(--hairline); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+td.mono, th.mono { font-family: var(--font-mono); font-size: 0.8rem; }
+td.num { font-family: var(--font-mono); text-align: right; }
+th.num { text-align: right; }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+.badge-dot { width: 6px; height: 6px; border-radius: 50%; }
+.badge.green { background: var(--signal-green-bg); color: var(--signal-green); }
+.badge.green .badge-dot { background: var(--signal-green); }
+.badge.amber { background: var(--signal-amber-bg); color: var(--signal-amber); }
+.badge.amber .badge-dot { background: var(--signal-amber); }
+.badge.red { background: var(--signal-red-bg); color: var(--signal-red); }
+.badge.red .badge-dot { background: var(--signal-red); }
+.badge.neutral { background: var(--paper); color: var(--ink-muted); }
+.badge.neutral .badge-dot { background: var(--ink-muted); }
+
+/* ============================================
+   OPENROUTER BALANCE CALLOUT
+   ============================================ */
+.balance-callout {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.balance-figure { font-family: var(--font-mono); font-size: 1.7rem; font-weight: 600; color: var(--signal-indigo); }
+.balance-label { font-size: 0.76rem; color: var(--ink-muted); margin-top: 2px; }
+.balance-meta { text-align: right; font-size: 0.76rem; color: var(--ink-muted); font-family: var(--font-mono); }
+
+/* ============================================
+   CHARTS
+   ============================================ */
+.chart-wrap { padding: 8px 12px 16px; height: 180px; }
+
+/* ============================================
+   REFRESH / STATUS
+   ============================================ */
+.refresh-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.78rem;
+  color: var(--ink-muted);
+}
+
+/* ============================================
+   RESPONSIVE
+   ============================================ */
+@media (max-width: 900px) {
+  .stat-ledger { grid-template-columns: repeat(2, 1fr); }
+  .stat-cell:nth-child(2n) { border-right: none; }
+  .stat-cell { border-bottom: 1px solid var(--hairline); }
+  .grid-2 { grid-template-columns: 1fr; }
+  table { font-size: 0.8rem; }
+  th, td { padding: 10px 14px; }
+}
+
+@media (max-width: 560px) {
+  .stat-ledger { grid-template-columns: 1fr; }
+  .stat-cell { border-right: none; }
+  .page-head { flex-direction: column; align-items: flex-start; }
+}

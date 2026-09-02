@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Duka AI — Admin</title>
+<meta name="theme-color" content="#1A2233">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="admin.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+</head>
+<body>
+
+<!-- ============ LOGIN GATE ============ -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="login-mark" aria-hidden="true"></div>
+    <h1>Duka AI Admin</h1>
+    <p>Enter your admin key to view the dashboard.</p>
+    <input type="password" id="adminKeyInput" placeholder="Admin key" autocomplete="off">
+    <button type="button" class="btn btn-primary" id="loginBtn">View dashboard</button>
+    <p class="login-error" id="loginError">That key isn't correct. Check it and try again.</p>
+  </div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app" style="display:none;">
+
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
+        Duka AI Admin
+      </div>
+      <span class="live-dot" aria-hidden="true"></span>
+      <div class="ticker-wrap">
+        <div class="ticker-track" id="tickerTrack">
+          <span class="ticker-empty">Loading recent activity…</span>
+        </div>
+      </div>
+      <button type="button" class="btn btn-icon" id="refreshBtn" title="Refresh now">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v6h-6"/></svg>
+      </button>
+      <button type="button" class="btn btn-icon" id="logoutBtn" title="Log out">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <main class="page">
+    <div class="container">
+
+      <div class="page-head">
+        <div>
+          <h1>Overview</h1>
+          <p class="subtitle">Real businesses, orders, and revenue — updated live.</p>
+        </div>
+        <div class="refresh-row">
+          <span id="lastUpdatedText">—</span>
+        </div>
+      </div>
+
+      <!-- ============ STAT LEDGER ============ -->
+      <div class="stat-ledger" id="statLedger">
+        <div class="stat-cell">
+          <div class="stat-label">Total businesses</div>
+          <div class="stat-value" id="statTotalBusinesses">—</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Connected to WhatsApp</div>
+          <div class="stat-value green" id="statConnected">—</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Total orders</div>
+          <div class="stat-value" id="statOrders">—</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Revenue collected</div>
+          <div class="stat-value indigo" id="statRevenue">—</div>
+        </div>
+        <div class="stat-cell">
+          <div class="stat-label">Payments</div>
+          <div class="stat-value" id="statPaymentsSummary" style="font-size:0.95rem;">—</div>
+          <div class="stat-sub" id="statPaymentsBreakdown"></div>
+        </div>
+      </div>
+
+      <!-- ============ REVENUE + OPENROUTER ============ -->
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Revenue, last 14 days</h2>
+          </div>
+          <div class="chart-wrap"><canvas id="revenueChart"></canvas></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>OpenRouter balance</h2>
+          </div>
+          <div class="balance-callout" id="balanceCallout">
+            <div>
+              <div class="balance-figure" id="balanceRemaining">—</div>
+              <div class="balance-label">Remaining credit</div>
+            </div>
+            <div class="balance-meta" id="balanceMeta"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ TOKEN USAGE ============ -->
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>AI token usage by business</h2>
+            <span class="count" id="tokenUsageCount"></span>
+          </div>
+          <div id="tokenUsageTableWrap">
+            <table>
+              <thead>
+                <tr><th>Business</th><th class="num">Calls</th><th class="num">Tokens</th></tr>
+              </thead>
+              <tbody id="tokenUsageTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Token usage, last 14 days</h2>
+          </div>
+          <div class="chart-wrap"><canvas id="tokenChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- ============ BUSINESSES ============ -->
+      <div class="panel" style="margin-bottom:24px;">
+        <div class="panel-head">
+          <h2>Businesses</h2>
+          <span class="count" id="businessesCount"></span>
+        </div>
+        <div id="businessesTableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Business</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th class="num">Orders</th>
+                <th class="num">Paid to date</th>
+                <th>Joined</th>
+              </tr>
+            </thead>
+            <tbody id="businessesTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ============ PAYMENTS ============ -->
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Recent payments</h2>
+          <span class="count" id="paymentsCount"></span>
+        </div>
+        <div id="paymentsTableWrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Business</th>
+                <th class="num">Amount</th>
+                <th>Status</th>
+                <th class="mono">Receipt</th>
+                <th>Date</th>
+              </tr>
+            </thead>
+            <tbody id="paymentsTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script src="admin.js"></script>
+</body>
+</html>

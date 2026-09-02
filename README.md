@@ -70,6 +70,16 @@ When I paste in new or updated code for this project, follow these rules:
 
 /docs
   whatsapp-ai-agent-plan.md   — full business + technical plan
+
+/admin
+  index.html            — admin dashboard (installable PWA)
+  admin.css             — dashboard design system
+  admin.js              — data fetching, rendering, auth
+  manifest.json          — PWA manifest
+  sw.js                 — service worker (offline shell caching)
+  /icons
+    icon-192.png
+    icon-512.png
 ```
 
 ## ✅ Build Status
@@ -89,7 +99,7 @@ When I paste in new or updated code for this project, follow these rules:
 | Per-client token usage tracking | Done |
 | Free trial + automatic billing | Done |
 | Website copy honesty pass (real claims only) | Done |
-| Admin panel (PWA) | Not started |
+| Admin panel (PWA) | Done |
 | Deployment | Not started |
 
 See `backend/README.md` for setup instructions on everything built so far
