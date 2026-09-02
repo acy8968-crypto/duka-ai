@@ -118,3 +118,8 @@ CREATE INDEX IF NOT EXISTS idx_subscriptions_billing_lookup
 -- Link payments to the subscription that triggered them (nullable, since
 -- the manual "pay now" button doesn't always originate from a subscription).
 ALTER TABLE payments ADD COLUMN IF NOT EXISTS subscription_id TEXT REFERENCES subscriptions(id);
+
+-- Tracks when a charge was last attempted for a subscription, so the
+-- billing cycle doesn't fire duplicate STK Pushes for the same
+-- subscription while a previous attempt is still awaiting its callback.
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS last_charge_attempt_at TIMESTAMPTZ;

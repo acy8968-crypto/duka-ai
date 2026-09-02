@@ -12,6 +12,13 @@ const { pool } = require("../db");
 const TRIAL_DAYS = 7;
 const BILLING_PERIOD_DAYS = 30;
 
+// How long to wait before retrying a charge that was already attempted
+// but hasn't received a callback result yet. This is what prevents the
+// billing cycle from firing duplicate STK Pushes for the same
+// subscription every time it runs (e.g. every 60 seconds in test mode)
+// while the first attempt is still awaiting a response from Safaricom.
+const CHARGE_RETRY_COOLDOWN_MINUTES = 30;
+
 function rowToRecord(row) {
   if (!row) return null;
   return {
@@ -64,7 +71,11 @@ async function getSubscriptionById(id) {
  */
 async function getExpiredTrials() {
   const result = await pool.query(
-    `SELECT * FROM subscriptions WHERE status = 'trialing' AND trial_ends_at <= now()`
+    `SELECT * FROM subscriptions
+     WHERE status = 'trialing'
+       AND trial_ends_at <= now()
+       AND (last_charge_attempt_at IS NULL OR last_charge_attempt_at <= now() - ($1 || ' minutes')::interval)`,
+    [CHARGE_RETRY_COOLDOWN_MINUTES]
   );
   return result.rows.map(rowToRecord);
 }
@@ -75,7 +86,11 @@ async function getExpiredTrials() {
  */
 async function getDueForRenewal() {
   const result = await pool.query(
-    `SELECT * FROM subscriptions WHERE status = 'active' AND current_period_end <= now()`
+    `SELECT * FROM subscriptions
+     WHERE status = 'active'
+       AND current_period_end <= now()
+       AND (last_charge_attempt_at IS NULL OR last_charge_attempt_at <= now() - ($1 || ' minutes')::interval)`,
+    [CHARGE_RETRY_COOLDOWN_MINUTES]
   );
   return result.rows.map(rowToRecord);
 }
@@ -117,6 +132,19 @@ async function cancelSubscription(subscriptionId) {
   return rowToRecord(result.rows[0]);
 }
 
+/**
+ * Records that a charge was just attempted for this subscription, so
+ * getExpiredTrials/getDueForRenewal skip it for the cooldown window
+ * instead of firing a duplicate STK Push on the next billing cycle.
+ */
+async function markChargeAttempted(subscriptionId) {
+  const result = await pool.query(
+    `UPDATE subscriptions SET last_charge_attempt_at = now() WHERE id = $1 RETURNING *`,
+    [subscriptionId]
+  );
+  return rowToRecord(result.rows[0]);
+}
+
 module.exports = {
   createSubscription,
   getSubscriptionByBusiness,
@@ -125,6 +153,7 @@ module.exports = {
   getDueForRenewal,
   activateAfterPayment,
   markPastDue,
+  markChargeAttempted,
   cancelSubscription,
   TRIAL_DAYS,
   BILLING_PERIOD_DAYS,

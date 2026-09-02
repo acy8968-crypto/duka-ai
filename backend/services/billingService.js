@@ -13,7 +13,7 @@
  */
 
 const { initiateStkPush } = require("./mpesaService");
-const { getExpiredTrials, getDueForRenewal } = require("./subscriptionStore");
+const { getExpiredTrials, getDueForRenewal, markChargeAttempted } = require("./subscriptionStore");
 const { createPaymentAttempt } = require("./paymentStore");
 const { getBusiness } = require("./businessStore");
 
@@ -23,6 +23,13 @@ const { getBusiness } = require("./businessStore");
  * or failure is handled later, when Daraja calls back to /api/mpesa/callback.
  */
 async function attemptCharge(subscription, reason) {
+  // Mark the attempt FIRST, before calling out to Daraja. This is what
+  // stops the next billing cycle (running e.g. every 60s in test mode)
+  // from firing another STK Push for this same subscription while this
+  // one is still awaiting its callback - this is the fix for the
+  // duplicate-charge loop bug found during testing.
+  await markChargeAttempted(subscription.id);
+
   try {
     const business = await getBusiness(subscription.businessId);
     if (!business) {

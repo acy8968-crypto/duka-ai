@@ -615,10 +615,6 @@ creates a properly linked payment record.
   double-charge businesses if you ever ran multiple server instances.
   Move to a proper external cron/worker (not an in-process timer) before
   scaling beyond one instance.
-- **No dunning/retry logic** - a `past_due` subscription stays past_due
-  until the next billing cycle happens to retry it (up to
-  `BILLING_CYCLE_INTERVAL_MS` later). No escalating retry schedule or
-  "your payment failed" notification to the business owner yet.
 - **No enforcement of plan limits** - the conversation limits shown on
   the pricing page (300/1,000/3,000+ per month) aren't currently
   measured or enforced anywhere in the code. A business on any plan can
@@ -627,8 +623,28 @@ creates a properly linked payment record.
   identically whether they're trialing, active, or even past_due. Nothing
   currently pauses a business's AI agent for non-payment.
 
+### Bug found and fixed during live testing: duplicate STK Pushes
+
+**What happened:** during real end-to-end testing, a subscription with
+a broken callback URL (see the M-Pesa callback note above) kept getting
+charged repeatedly - once per billing cycle - because nothing stopped
+the cycle from re-selecting the same still-`trialing` subscription every
+time it ran, since the status only changes once a callback arrives.
+
+**The fix:** a new `last_charge_attempt_at` column on `subscriptions`,
+set the moment a charge is attempted (before the STK Push call, not
+after, to close a possible race). `getExpiredTrials()` and
+`getDueForRenewal()` now skip any subscription charged within the last
+`CHARGE_RETRY_COOLDOWN_MINUTES` (30 minutes, in `subscriptionStore.js`),
+so a slow or missing callback no longer causes repeat charges - the
+system waits out the cooldown and retries once, instead of firing every
+cycle.
+
+**Tested:** ran 3 billing cycles back-to-back against a real database
+with a stubbed M-Pesa call - confirmed exactly 1 STK Push and 1 payment
+record were created, not 3, proving the fix actually closes the loop.
+
 ### Next build step
 
 Deployment, plus deciding whether/how to enforce plan limits and pause
 access for past_due subscriptions.
-
