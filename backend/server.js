@@ -25,9 +25,23 @@ const { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness } = re
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
+const rawOrigins = process.env.ALLOWED_ORIGIN;
+let corsOrigin = "*";
+if (rawOrigins && rawOrigins !== "*") {
+  const allowed = rawOrigins.split(",").map((o) => o.trim());
+  corsOrigin = (origin, callback) => {
+    if (!origin) return callback(null, true);
+    if (allowed.includes(origin) || allowed.includes("*")) {
+      return callback(null, true);
+    }
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  };
+}
 
-app.use(cors({ origin: ALLOWED_ORIGIN }));
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 /* ------------------------------------------------------------------
