@@ -8,8 +8,11 @@
  */
 
 // Matches current hostname (localhost vs 127.0.0.1) to prevent Private Network Access restrictions
+// Matches current hostname (localhost vs 127.0.0.1 vs same-origin port 3000)
 const API_BASE_URL =
-  window.location.hostname === "127.0.0.1"
+  window.location.port === "3000"
+    ? ""
+    : window.location.hostname === "127.0.0.1"
     ? "http://127.0.0.1:3000"
     : "http://localhost:3000";
 
@@ -19,6 +22,7 @@ let adminKey = localStorage.getItem("dukaAdminKey") || "";
 let refreshTimer = null;
 let revenueChart = null;
 let tokenChart = null;
+let lastAuthError = "";
 
 document.addEventListener("DOMContentLoaded", () => {
   registerServiceWorker();
@@ -30,7 +34,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
+  if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch((err) => {
       console.warn("Service worker registration failed:", err);
     });
@@ -58,6 +62,11 @@ function wireLoginForm() {
     const ok = await tryEnterDashboard();
 
     if (!ok) {
+      if (lastAuthError === "NETWORK_ERROR") {
+        error.textContent = "Cannot reach backend. Make sure the server is running.";
+      } else {
+        error.textContent = "That key isn't correct. Check it and try again.";
+      }
       error.classList.add("visible");
       adminKey = "";
       localStorage.removeItem("dukaAdminKey");
@@ -85,16 +94,25 @@ function wireLoginForm() {
 }
 
 async function apiGet(path) {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    headers: { "x-admin-key": adminKey },
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      headers: { "x-admin-key": adminKey },
+    });
+  } catch (netErr) {
+    lastAuthError = "NETWORK_ERROR";
+    throw new Error("NETWORK_ERROR");
+  }
+
   if (res.status === 401) {
+    lastAuthError = "UNAUTHORIZED";
     throw new Error("UNAUTHORIZED");
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Request failed (${res.status})`);
   }
+  lastAuthError = "";
   return res.json();
 }
 
@@ -120,29 +138,23 @@ async function tryEnterDashboard() {
 
 async function loadDashboard() {
   try {
-    const [stats, businesses, payments, revenue, activity, tokenUsage, credits] = await Promise.all([
+    const results = await Promise.allSettled([
       apiGet("/api/admin/stats"),
       apiGet("/api/admin/businesses"),
       apiGet("/api/admin/payments"),
       apiGet("/api/admin/revenue-by-day"),
       apiGet("/api/admin/activity"),
       apiGet("/api/admin/token-usage"),
-      apiGet("/api/admin/openrouter-credits").catch(() => null), // don't let a credits API hiccup break the whole dashboard
+      apiGet("/api/admin/openrouter-credits"),
     ]);
 
-    renderStats(stats);
-    renderBusinesses(businesses.businesses);
-    renderPayments(payments.payments);
-    renderRevenueChart(revenue.revenue);
-    renderTicker(activity.activity);
-    renderTokenUsage(tokenUsage);
-    renderCredits(credits);
+    const [statsRes, bizRes, payRes, revRes, actRes, tokRes, credRes] = results;
 
-    document.getElementById("lastUpdatedText").textContent =
-      "Updated " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-  } catch (err) {
-    if (err.message === "UNAUTHORIZED") {
-      // Key was valid before but no longer works (e.g. rotated) - send back to login
+    // Check for 401 unauthorized
+    const unauthorized = results.find(
+      (r) => r.status === "rejected" && r.reason && r.reason.message === "UNAUTHORIZED"
+    );
+    if (unauthorized) {
       localStorage.removeItem("dukaAdminKey");
       adminKey = "";
       if (refreshTimer) clearInterval(refreshTimer);
@@ -150,8 +162,40 @@ async function loadDashboard() {
       document.getElementById("loginScreen").style.display = "flex";
       return;
     }
+
+    if (statsRes.status === "fulfilled") renderStats(statsRes.value);
+    if (bizRes.status === "fulfilled") renderBusinesses(bizRes.value.businesses || []);
+    if (payRes.status === "fulfilled") renderPayments(payRes.value.payments || []);
+
+    // Always update ticker — never leave stuck on 'Loading recent activity…'
+    if (actRes.status === "fulfilled") {
+      renderTicker(actRes.value.activity || []);
+    } else {
+      renderTicker([]);
+    }
+
+    if (credRes.status === "fulfilled") {
+      renderCredits(credRes.value);
+    } else {
+      renderCredits(null);
+    }
+
+    if (revRes.status === "fulfilled") renderRevenueChart(revRes.value.revenue || []);
+    if (tokRes.status === "fulfilled") renderTokenUsage(tokRes.value);
+
+    const failedCount = results.filter((r) => r.status === "rejected").length;
+    if (failedCount === 0) {
+      document.getElementById("lastUpdatedText").textContent =
+        "Updated " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    } else if (failedCount === results.length) {
+      document.getElementById("lastUpdatedText").textContent = "Couldn't refresh — check backend is running.";
+    } else {
+      document.getElementById("lastUpdatedText").textContent =
+        "Updated " + new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+    }
+  } catch (err) {
     console.error("Dashboard load failed:", err);
-    document.getElementById("lastUpdatedText").textContent = "Couldn't refresh — check the backend is running.";
+    document.getElementById("lastUpdatedText").textContent = "Couldn't refresh — check backend is running.";
   }
 }
 
@@ -269,22 +313,24 @@ function renderTokenUsage(tokenUsage) {
   const labels = daily.map((d) => new Date(d.day).toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
   const values = daily.map((d) => Number(d.total_tokens));
 
-  if (tokenChart) tokenChart.destroy();
-  tokenChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: labels.length ? labels : ["No data yet"],
-      datasets: [
-        {
-          data: values.length ? values : [0],
-          backgroundColor: "#4F46E5",
-          borderRadius: 3,
-          maxBarThickness: 22,
-        },
-      ],
-    },
-    options: chartOptions(),
-  });
+  if (typeof Chart !== "undefined") {
+    if (tokenChart) tokenChart.destroy();
+    tokenChart = new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels.length ? labels : ["No data yet"],
+        datasets: [
+          {
+            data: values.length ? values : [0],
+            backgroundColor: "#4F46E5",
+            borderRadius: 3,
+            maxBarThickness: 22,
+          },
+        ],
+      },
+      options: chartOptions(),
+    });
+  }
 }
 
 function renderRevenueChart(revenue) {
@@ -292,25 +338,27 @@ function renderRevenueChart(revenue) {
   const labels = revenue.map((r) => new Date(r.day).toLocaleDateString("en-GB", { day: "numeric", month: "short" }));
   const values = revenue.map((r) => Number(r.total));
 
-  if (revenueChart) revenueChart.destroy();
-  revenueChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: labels.length ? labels : ["No revenue yet"],
-      datasets: [
-        {
-          data: values.length ? values : [0],
-          borderColor: "#16A34A",
-          backgroundColor: "rgba(22, 163, 74, 0.08)",
-          fill: true,
-          tension: 0.3,
-          pointRadius: 0,
-          borderWidth: 2,
-        },
-      ],
-    },
-    options: chartOptions(),
-  });
+  if (typeof Chart !== "undefined") {
+    if (revenueChart) revenueChart.destroy();
+    revenueChart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: labels.length ? labels : ["No revenue yet"],
+        datasets: [
+          {
+            data: values.length ? values : [0],
+            borderColor: "#16A34A",
+            backgroundColor: "rgba(22, 163, 74, 0.08)",
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 2,
+          },
+        ],
+      },
+      options: chartOptions(),
+    });
+  }
 }
 
 function chartOptions() {

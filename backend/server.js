@@ -1,4 +1,4 @@
-require("dotenv").config({ override: true });
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 
@@ -25,23 +25,26 @@ const { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness } = re
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const rawOrigins = process.env.ALLOWED_ORIGIN;
-let corsOrigin = "*";
-if (rawOrigins && rawOrigins !== "*") {
-  const allowed = rawOrigins.split(",").map((o) => o.trim());
-  corsOrigin = (origin, callback) => {
-    if (!origin) return callback(null, true);
-    if (allowed.includes(origin) || allowed.includes("*")) {
-      return callback(null, true);
-    }
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-      return callback(null, true);
-    }
-    return callback(null, false);
-  };
-}
+// Supports a comma-separated list of allowed origins in production
+// (e.g. your GitHub Pages frontend + a custom domain), while staying
+// permissive during local development if ALLOWED_ORIGIN isn't set.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGIN || "*")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors({ origin: corsOrigin }));
+app.use(
+  cors({
+    origin: (requestOrigin, callback) => {
+      // Allow non-browser requests (no Origin header, e.g. curl, Daraja callbacks)
+      if (!requestOrigin) return callback(null, true);
+      if (ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(requestOrigin)) {
+        return callback(null, true);
+      }
+      callback(new Error(`Origin ${requestOrigin} is not allowed by CORS.`));
+    },
+  })
+);
 app.use(express.json());
 
 /* ------------------------------------------------------------------

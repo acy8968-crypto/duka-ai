@@ -1,0 +1,82 @@
+# Render Blueprint — Duka AI Backend
+# ------------------------------------------------------------------
+# This file lets Render create and configure the backend service
+# automatically from this repo, instead of clicking through the
+# dashboard by hand every time.
+#
+# Usage: In the Render dashboard, "New +" -> "Blueprint" -> connect
+# this GitHub repo -> Render reads this file and proposes the service
+# below for you to review and deploy.
+#
+# Docs: https://render.com/docs/blueprint-spec
+# ------------------------------------------------------------------
+
+services:
+  - type: web
+    name: duka-ai-backend
+    runtime: node
+    plan: starter               # cheapest paid tier with no spin-down;
+                                 # change to "free" to test first (spins
+                                 # down after inactivity - NOT suitable
+                                 # for real production, since a sleeping
+                                 # server misses WhatsApp/M-Pesa webhooks)
+    region: frankfurt            # closest Render region to Kenya
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # --- AI provider ---
+      - key: OPENROUTER_API_KEY
+        sync: false              # set manually in Render's dashboard - never committed
+      - key: OPENROUTER_MODEL
+        value: google/gemini-2.5-flash
+
+      # --- Database (Supabase) ---
+      - key: DATABASE_URL
+        sync: false
+
+      # --- Meta / WhatsApp (production Embedded Signup credentials) ---
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: GRAPH_API_VERSION
+        value: v21.0
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: META_EMBEDDED_SIGNUP_CONFIG_ID
+        sync: false
+
+      # --- M-Pesa Daraja (PRODUCTION, not sandbox) ---
+      - key: MPESA_BASE_URL
+        value: https://api.safaricom.co.ke
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_SHORTCODE
+        sync: false             # your real production Paybill number, not 174379
+      - key: MPESA_PASSKEY
+        sync: false             # your real production passkey, not the sandbox one
+      # MPESA_CALLBACK_URL is set AFTER first deploy, once you know your
+      # Render URL (see PRODUCTION_CHECKLIST.md) - Render's own URL
+      # replaces the need for ngrok entirely in production.
+      - key: MPESA_CALLBACK_URL
+        sync: false
+
+      # --- Admin panel ---
+      - key: ADMIN_API_KEY
+        sync: false              # generate a NEW strong key for production, don't reuse the dev one
+
+      # --- CORS ---
+      - key: ALLOWED_ORIGIN
+        sync: false              # your real frontend origin(s), comma-separated - see checklist
+
+      # --- Billing scheduler ---
+      - key: BILLING_CYCLE_INTERVAL_MS
+        value: "3600000"         # 1 hour - the real production interval, NOT the fast 60000 used for testing

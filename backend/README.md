@@ -648,3 +648,57 @@ record were created, not 3, proving the fix actually closes the loop.
 
 Deployment, plus deciding whether/how to enforce plan limits and pause
 access for past_due subscriptions.
+
+---
+
+## Step 11: Production Deployment Prep — now built
+
+Three deployment paths are ready, so going live is a configuration
+change once BRS + Safaricom approvals land, not new development:
+
+- **Render** (`render.yaml`) — recommended, simplest
+- **Railway** (`railway.json`) — alternative, similar simplicity
+- **Docker/VPS** (`Dockerfile`, `.dockerignore`) — for full control on
+  your own server
+
+### What changed
+
+- **CORS now supports multiple comma-separated origins** instead of
+  just one - needed since production will have a frontend origin
+  (GitHub Pages) different from wherever the backend itself runs.
+  Tested against 7 scenarios (multi-origin, wildcard fallback,
+  single-origin backward compatibility, correctly rejecting unlisted
+  origins, and allowing non-browser requests like Daraja's callback,
+  which has no Origin header).
+- **`package.json`** now pins a minimum Node version (`>=20.0.0`) so
+  hosting platforms provision the right runtime automatically.
+- **`.env.production.example`** is a separate template from
+  `.env.example` - production needs real Paybill credentials, a real
+  Meta Embedded Signup config, a fresh admin key, and a 1-hour billing
+  interval, none of which should reuse your sandbox/dev values.
+
+### The full cutover checklist
+
+See **`PRODUCTION_CHECKLIST.md`** at the project root - it's the single
+document to follow, top to bottom, the moment your BRS certificate and
+Safaricom Paybill are both ready. It covers deployment, replacing ngrok
+with your permanent hosting URL, swapping every sandbox credential for
+a real one, locking down access, and a full real-money smoke test
+before announcing anything.
+
+### What's honestly not verified
+
+- The CORS logic and healthcheck command were tested directly; the
+  Dockerfile's actual `docker build` was not run in this environment
+  (no Docker available) - review it and do a real build early, not for
+  the first time during a live cutover.
+- Render/Railway's actual deploy behavior wasn't tested live, since
+  that requires a real account and a real push - the config files
+  follow each platform's documented spec, but the first real deploy is
+  still your first real test of them.
+
+### Next build step
+
+Nothing left to build for the current feature set - the remaining work
+is external (BRS certificate, Safaricom Paybill, Meta Business
+Verification) and the actual production cutover once those land.

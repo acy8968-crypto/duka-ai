@@ -1,4 +1,4 @@
-﻿# Environment variables
+# Environment variables
 .env
 .env.local
 *.env
@@ -9,3 +9,4 @@ node_modules/
 # Logs & temp
 *.log
 scratch/
+archive/
