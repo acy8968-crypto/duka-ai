@@ -28,11 +28,52 @@ let lastAuthError = "";
 document.addEventListener("DOMContentLoaded", () => {
   registerServiceWorker();
   wireLoginForm();
+  wirePwaInstall();
 
   if (adminKey) {
     tryEnterDashboard();
   }
 });
+
+let deferredInstallPrompt = null;
+
+function wirePwaInstall() {
+  const btn = document.getElementById("installPwaBtn");
+  if (!btn) return;
+
+  if (window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true) {
+    btn.style.display = "none";
+    return;
+  }
+
+  window.addEventListener("beforeinstallprompt", (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    btn.style.display = "inline-flex";
+  });
+
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    btn.style.display = "none";
+  });
+
+  btn.addEventListener("click", async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === "accepted") {
+        btn.style.display = "none";
+      }
+      deferredInstallPrompt = null;
+    } else {
+      alert(
+        "To download & install this dashboard app in Chrome:\n\n" +
+        "1. Click the Chrome menu (⋮) in the top-right corner.\n" +
+        "2. Click 'Save and share' -> 'Install Duka AI Admin' (or 'Install page as app')."
+      );
+    }
+  });
+}
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator && window.location.protocol.startsWith("http")) {
