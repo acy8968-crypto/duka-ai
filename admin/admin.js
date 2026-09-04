@@ -8,13 +8,14 @@
  */
 
 // Matches current hostname (localhost vs 127.0.0.1) to prevent Private Network Access restrictions
-// Matches current hostname (localhost vs 127.0.0.1 vs same-origin port 3000)
 const API_BASE_URL =
   window.location.port === "3000"
     ? ""
     : window.location.hostname === "127.0.0.1"
     ? "http://127.0.0.1:3000"
-    : "http://localhost:3000";
+    : window.location.hostname === "localhost"
+    ? "http://localhost:3000"
+    : "https://duka-ai-backend.onrender.com";
 
 const REFRESH_INTERVAL_MS = 30000; // auto-refresh every 30s
 

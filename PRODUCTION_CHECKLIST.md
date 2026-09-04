@@ -62,8 +62,8 @@ command was verified separately against a real running server, but
 building the image itself should be your first real test — try it early,
 not for the first time during a live cutover.
 
-- [ ] Backend deployed and reachable at a real HTTPS URL
-- [ ] `GET https://your-real-url/api/health` returns `{"status":"ok"}`
+- [x] Backend deployed and reachable at a real HTTPS URL (`https://duka-ai-backend.onrender.com`)
+- [x] `GET https://duka-ai-backend.onrender.com/api/health` returns `{"status":"ok"}` (verified live)
 
 ---
 
@@ -115,8 +115,8 @@ when you close your laptop.
 
 ## Phase 5 — Frontend
 
-- [ ] Confirm `API_BASE_URL` in `frontend/script.js` and `admin/admin.js`
-      points to your real backend URL, not `http://localhost:3000`
+- [x] Confirm `API_BASE_URL` in `frontend/script.js`, `script.js`, and `admin/admin.js`
+      points to your real backend URL (`https://duka-ai-backend.onrender.com`) when running online
 - [ ] Confirm the Meta `appId` in `onboarding.html`'s `fbAsyncInit` is
       your real, live App ID (already fixed once before — just re-confirm)
 - [ ] If your frontend is on GitHub Pages, confirm it's been redeployed

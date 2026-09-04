@@ -8,8 +8,11 @@
    Remaining "TODO(backend)" comments mark what's left to wire up.
    ============================================================ */
 
-// Change this if your backend runs somewhere other than localhost:3000
-const API_BASE_URL = "http://localhost:3000";
+// Uses local backend when developing, and live Render backend when deployed online
+const API_BASE_URL =
+  window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+    ? (window.location.hostname === "127.0.0.1" ? "http://127.0.0.1:3000" : "http://localhost:3000")
+    : "https://duka-ai-backend.onrender.com";
 
 // From Meta App Dashboard > WhatsApp > Embedded Signup Builder
 const META_EMBEDDED_SIGNUP_CONFIG_ID = "YOUR_EMBEDDED_SIGNUP_CONFIG_ID";
