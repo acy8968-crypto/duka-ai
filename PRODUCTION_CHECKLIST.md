@@ -73,16 +73,16 @@ Your permanent hosting URL replaces ngrok — no more URLs that expire
 when you close your laptop.
 
 ### M-Pesa callback
-- [ ] Set `MPESA_CALLBACK_URL` in your host's environment variables to
-      `https://your-real-url/api/mpesa/callback`
-- [ ] Redeploy/restart so the new value takes effect
+- [x] Set `MPESA_CALLBACK_URL` in your host's environment variables to
+      `https://duka-ai-backend.onrender.com/api/mpesa/callback`
+- [x] Redeploy/restart so the new value takes effect
 
 ### Meta WhatsApp webhook
-- [ ] Go to **Meta App Dashboard → WhatsApp → Configuration → Webhook**
-- [ ] Update Callback URL to `https://your-real-url/webhook`
-- [ ] Verify Token must match your production `META_WEBHOOK_VERIFY_TOKEN` exactly
-- [ ] Click **Verify and Save** and confirm it succeeds
-- [ ] Re-subscribe to the `messages` field if it's not already checked
+- [x] Go to **Meta App Dashboard → WhatsApp → Configuration → Webhook**
+- [x] Update Callback URL to `https://duka-ai-backend.onrender.com/webhook`
+- [x] Verify Token must match your production `META_WEBHOOK_VERIFY_TOKEN` exactly (`kevin`)
+- [x] Click **Verify and Save** and confirm it succeeds (verified live)
+- [x] Re-subscribe to the `messages` field if it's not already checked (verified subscribed)
 
 ---
 
