@@ -41,10 +41,24 @@ app.use(
       if (ALLOWED_ORIGINS.includes("*") || ALLOWED_ORIGINS.includes(requestOrigin)) {
         return callback(null, true);
       }
-      callback(new Error(`Origin ${requestOrigin} is not allowed by CORS.`));
+      callback(new Error("CORS_ORIGIN_REJECTED"));
     },
   })
 );
+
+// Converts a rejected CORS origin into a clean 403, instead of letting it
+// fall through to Express's default error handler (which returns a
+// generic 500 - technically "it works" since the browser still blocks
+// the response either way, but a 500 wrongly suggests a real server
+// error rather than an expected "this origin isn't allowed" case, and
+// would show up as noise in error monitoring/logs).
+app.use((err, req, res, next) => {
+  if (err && err.message === "CORS_ORIGIN_REJECTED") {
+    return res.status(403).json({ error: "This origin is not allowed to access this API." });
+  }
+  next(err);
+});
+
 app.use(express.json());
 
 /* ------------------------------------------------------------------
