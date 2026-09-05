@@ -20,10 +20,10 @@
  * ------------------------------------------------------------------
  */
 
-require("dotenv").config();
+require("dotenv").config({ path: require("path").resolve(__dirname, "../.env"), override: true });
 
 const { createBusiness, attachWhatsappNumber } = require("../services/businessStore");
-const { generateSystemPrompt } = require("../services/geminiService");
+const { generateSystemPrompt } = require("../services/openrouterService");
 
 async function main() {
   const phoneNumberId = process.env.META_TEST_PHONE_NUMBER_ID;
@@ -36,15 +36,15 @@ async function main() {
     process.exit(1);
   }
 
-  // Edit these details to describe whatever test business you want to try.
-  const businessName = "Kaya Threads";
-  const businessType = "Retail / Shop";
-  const ownerContact = "esmond@example.com";
+  // Duka AI live demo business
+  const businessName = "Autopal Duka AI";
+  const businessType = "WhatsApp AI Assistant Demo";
+  const ownerContact = "esmond@autopal.co.ke";
   const description =
-    "We sell custom-printed t-shirts and hoodies in Kenya. Prices range from KES 1,200 to KES 2,800 depending on design and size. We deliver countrywide via courier, KES 300 flat fee. Friendly, casual tone - mix of English and Sheng is fine. Open Monday to Saturday, 9am to 6pm.";
+    "Duka AI is an intelligent WhatsApp AI agent for Kenyan businesses. We help shops, boutiques, and sellers automate customer orders, answer product FAQs 24/7, and collect M-Pesa payments. Our plans are Starter (KES 1,999/mo), Growth (KES 4,999/mo), and Pro (KES 9,999/mo). Friendly, professional tone in natural Kenyan English and Swahili. If someone says 'Hi, show me how Duka AI works', warmly introduce Duka AI, explain how we help businesses close sales while they sleep, and invite them to ask any question or test placing a mock order.";
 
-  console.log("Generating AI system prompt via Gemini...");
-  const systemPrompt = await generateSystemPrompt({ businessName, businessType, description });
+  console.log("Generating AI system prompt via OpenRouter...");
+  const { systemPrompt } = await generateSystemPrompt({ businessName, businessType, description });
   console.log("--- Generated system prompt ---\n" + systemPrompt + "\n--------------------------------");
 
   const business = await createBusiness({ businessName, businessType, ownerContact, description, systemPrompt });

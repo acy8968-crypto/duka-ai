@@ -21,10 +21,46 @@ const { addOrder, getOrders } = require("./services/orderStore");
 const { buildOrdersWorkbook } = require("./services/exportService");
 const { markProcessedIfNew, cleanupOlderThan } = require("./services/dedupStore");
 const { initiateStkPush } = require("./services/mpesaService");
-const { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness } = require("./services/paymentStore");
+const { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness, findPaymentByCheckoutRequestId } = require("./services/paymentStore");
+
+const crypto = require("crypto");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false, // allow GitHub Pages / inline styles if served
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+}));
+
+// Rate limiters
+const promptGenLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // max 10 prompt generations per IP per 15 min
+  message: { error: "Too many prompt generation requests. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const stkPushLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  max: 5, // max 5 STK pushes per IP per 10 min
+  message: { error: "Too many payment requests. Please wait a few minutes before trying again." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const adminAuthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 30, // max 30 admin calls per IP per 15 min
+  message: { error: "Too many admin requests. Slow down." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // Supports a comma-separated list of allowed origins in production
 // (e.g. your GitHub Pages frontend + a custom domain), while staying
 // permissive during local development if ALLOWED_ORIGIN isn't set.
@@ -59,7 +95,12 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-app.use(express.json());
+// Capture raw body for webhook HMAC signature verification
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 
 /* ------------------------------------------------------------------
    Health check
@@ -74,7 +115,7 @@ app.get("/api/health", (req, res) => {
    -> generates the WhatsApp AI system prompt via Gemini,
       stores it against a new business record, and returns both.
    ------------------------------------------------------------------ */
-app.post("/api/generate-prompt", async (req, res) => {
+app.post("/api/generate-prompt", promptGenLimiter, async (req, res) => {
   const { businessName, businessType, ownerContact, description } = req.body || {};
 
   if (!businessName || !description) {
@@ -205,6 +246,40 @@ app.get("/webhook", (req, res) => {
   return res.sendStatus(403);
 });
 
+function verifyMetaSignature(req, res, next) {
+  const appSecret = process.env.META_APP_SECRET;
+  if (!appSecret) {
+    // If not configured (e.g. initial dev), warn but allow
+    return next();
+  }
+
+  const signature = req.headers["x-hub-signature-256"];
+  if (!signature) {
+    console.warn("Rejected incoming webhook: missing x-hub-signature-256 header");
+    return res.status(401).json({ error: "Missing webhook signature." });
+  }
+
+  const [algo, signatureHash] = signature.split("=");
+  if (algo !== "sha256" || !signatureHash) {
+    return res.status(401).json({ error: "Invalid signature format." });
+  }
+
+  const expectedHash = crypto
+    .createHmac("sha256", appSecret)
+    .update(req.rawBody || "")
+    .digest("hex");
+
+  const sigBuf = Buffer.from(signatureHash, "hex");
+  const expBuf = Buffer.from(expectedHash, "hex");
+
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    console.warn("Rejected incoming webhook: HMAC signature mismatch");
+    return res.status(401).json({ error: "Invalid webhook signature." });
+  }
+
+  next();
+}
+
 /* --------------------------------------------------------------------
    POST /webhook
    Meta calls this for every incoming message / status update.
@@ -212,7 +287,7 @@ app.get("/webhook", (req, res) => {
    Best practice: respond 200 immediately, then process afterward, so
    a slow AI reply never causes Meta to time out and retry the delivery.
    -------------------------------------------------------------------- */
-app.post("/webhook", (req, res) => {
+app.post("/webhook", verifyMetaSignature, (req, res) => {
   res.sendStatus(200); // acknowledge immediately, per Meta's guidance
 
   handleIncomingWebhook(req.body).catch((err) => {
@@ -295,8 +370,9 @@ async function handleCustomerMessage({ business, customerWaId, messageText }) {
 /* ------------------------------------------------------------------
    GET /api/business/:id/orders
    Preview of orders detected so far for this business, as raw JSON.
+   Protected by admin key to prevent unauthorized access to customer orders.
    ------------------------------------------------------------------ */
-app.get("/api/business/:id/orders", async (req, res) => {
+app.get("/api/business/:id/orders", requireAdminKey, async (req, res) => {
   const business = await getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
   res.json({ businessId: business.id, orders: await getOrders(business.id) });
@@ -306,8 +382,9 @@ app.get("/api/business/:id/orders", async (req, res) => {
    GET /api/business/:id/orders/export
    Downloads all detected orders for this business as a real .xlsx file,
    ready to open in Excel, Google Sheets, or any spreadsheet app.
+   Protected by admin key to prevent unauthorized PII downloads.
    ------------------------------------------------------------------ */
-app.get("/api/business/:id/orders/export", async (req, res) => {
+app.get("/api/business/:id/orders/export", requireAdminKey, async (req, res) => {
   const business = await getBusiness(req.params.id);
   if (!business) return res.status(404).json({ error: "Business not found." });
 
@@ -338,7 +415,7 @@ app.get("/api/business/:id/orders/export", async (req, res) => {
      - amount: whole KES number
    Triggers a real STK Push prompt to that phone (sandbox = no real money).
    ------------------------------------------------------------------ */
-app.post("/api/business/:id/subscribe/initiate", async (req, res) => {
+app.post("/api/business/:id/subscribe/initiate", stkPushLimiter, async (req, res) => {
   const { phoneNumber, amount } = req.body || {};
 
   if (!phoneNumber || !amount) {
@@ -388,6 +465,13 @@ app.post("/api/business/:id/subscribe/initiate", async (req, res) => {
 app.post("/api/mpesa/callback", async (req, res) => {
   res.sendStatus(200); // acknowledge immediately, per Daraja's expectations
 
+  // Optional shared secret verification if configured in MPESA_CALLBACK_URL query string (?secret=...)
+  const expectedSecret = process.env.MPESA_CALLBACK_SECRET;
+  if (expectedSecret && req.query.secret !== expectedSecret) {
+    console.warn("M-Pesa callback rejected: secret token mismatch");
+    return;
+  }
+
   try {
     const callback = req.body?.Body?.stkCallback;
     if (!callback) {
@@ -398,6 +482,18 @@ app.post("/api/mpesa/callback", async (req, res) => {
     const checkoutRequestId = callback.CheckoutRequestID;
     const resultCode = callback.ResultCode;
     const resultDesc = callback.ResultDesc;
+
+    // Verify this checkoutRequestId exists in our records and was in 'pending' status
+    const existingPayment = await findPaymentByCheckoutRequestId(checkoutRequestId);
+    if (!existingPayment) {
+      console.warn(`Untrusted M-Pesa callback: CheckoutRequestID ${checkoutRequestId} not found in database.`);
+      return;
+    }
+
+    if (existingPayment.status !== "pending") {
+      console.warn(`Ignoring duplicate/replayed M-Pesa callback for ${checkoutRequestId} (status: ${existingPayment.status}).`);
+      return;
+    }
 
     let mpesaReceiptNumber = null;
     if (resultCode === 0 && Array.isArray(callback.CallbackMetadata?.Item)) {
@@ -451,13 +547,22 @@ function requireAdminKey(req, res, next) {
   if (!expectedKey) {
     return res.status(500).json({ error: "ADMIN_API_KEY is not configured on the server." });
   }
-  if (!providedKey || providedKey !== expectedKey) {
+
+  if (!providedKey) {
+    return res.status(401).json({ error: "Unauthorized." });
+  }
+
+  // Timing-safe equality check to prevent side-channel timing attacks
+  const providedBuf = Buffer.from(String(providedKey));
+  const expectedBuf = Buffer.from(String(expectedKey));
+
+  if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
     return res.status(401).json({ error: "Unauthorized." });
   }
   next();
 }
 
-app.use("/api/admin", requireAdminKey);
+app.use("/api/admin", adminAuthLimiter, requireAdminKey);
 
 /* GET /api/admin/stats - overview numbers for the dashboard's stat cards */
 app.get("/api/admin/stats", async (req, res) => {

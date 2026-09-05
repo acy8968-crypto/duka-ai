@@ -19,13 +19,21 @@ async function createPaymentAttempt({ businessId, checkoutRequestId, phoneNumber
   return result.rows[0];
 }
 
+async function findPaymentByCheckoutRequestId(checkoutRequestId) {
+  const result = await pool.query(
+    "SELECT * FROM payments WHERE checkout_request_id = $1",
+    [checkoutRequestId]
+  );
+  return result.rows[0] || null;
+}
+
 async function recordPaymentResult({ checkoutRequestId, resultCode, resultDesc, mpesaReceiptNumber }) {
   const status = resultCode === 0 ? "completed" : "failed";
 
   const result = await pool.query(
     `UPDATE payments
      SET status = $2, result_code = $3, result_desc = $4, mpesa_receipt_number = $5, completed_at = now()
-     WHERE checkout_request_id = $1
+     WHERE checkout_request_id = $1 AND status = 'pending'
      RETURNING *`,
     [checkoutRequestId, status, resultCode, resultDesc, mpesaReceiptNumber || null]
   );
@@ -40,4 +48,4 @@ async function getPaymentsForBusiness(businessId) {
   return result.rows;
 }
 
-module.exports = { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness };
+module.exports = { createPaymentAttempt, recordPaymentResult, getPaymentsForBusiness, findPaymentByCheckoutRequestId };
