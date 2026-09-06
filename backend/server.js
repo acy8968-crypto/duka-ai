@@ -53,10 +53,13 @@ const stkPushLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const adminAuthLimiter = rateLimit({
+// Only throttle failed login / unauthorized attempts to prevent brute-forcing,
+// while letting authenticated dashboard queries poll freely
+const adminFailedAuthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 30, // max 30 admin calls per IP per 15 min
-  message: { error: "Too many admin requests. Slow down." },
+  max: 20, // max 20 failed attempts per IP
+  skipSuccessfulRequests: true,
+  message: { error: "Too many failed admin authentication attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -562,7 +565,7 @@ function requireAdminKey(req, res, next) {
   next();
 }
 
-app.use("/api/admin", adminAuthLimiter, requireAdminKey);
+app.use("/api/admin", adminFailedAuthLimiter, requireAdminKey);
 
 /* GET /api/admin/stats - overview numbers for the dashboard's stat cards */
 app.get("/api/admin/stats", async (req, res) => {
